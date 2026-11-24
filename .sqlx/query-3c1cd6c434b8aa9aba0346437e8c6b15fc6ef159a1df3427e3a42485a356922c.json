@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO listing_staff (listing_id, staff_user_id, assigned_by)\n            SELECT l.id, $2, $3\n            FROM listing l\n            WHERE l.id = ANY($1)\n              AND l.deleted_at IS NULL\n            ON CONFLICT (listing_id, staff_user_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3c1cd6c434b8aa9aba0346437e8c6b15fc6ef159a1df3427e3a42485a356922c"
+}

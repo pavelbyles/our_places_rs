@@ -1,0 +1,164 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, code, discount_type as \"discount_type: PromoDiscountType\", discount_value,\n            currency, scope as \"scope: PromoScope\", valid_from, valid_to, stay_from, stay_to,\n            min_nights, min_booking_value, total_usage_limit, per_guest_limit, applies_to_all,\n            owner_host_id, created_by, deactivated_at, deactivated_by, created_at, updated_at\n        FROM promo_code\n        WHERE ($1::uuid IS NULL OR owner_host_id = $1)\n        ORDER BY created_at DESC, id DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "discount_type: PromoDiscountType",
+        "type_info": {
+          "Custom": {
+            "name": "promo_discount_type",
+            "kind": {
+              "Enum": [
+                "percentage",
+                "fixed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "discount_value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "currency",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "scope: PromoScope",
+        "type_info": {
+          "Custom": {
+            "name": "promo_scope",
+            "kind": {
+              "Enum": [
+                "stay",
+                "stay_and_cleaning"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "valid_from",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "valid_to",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "stay_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "stay_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 10,
+        "name": "min_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "min_booking_value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "total_usage_limit",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "per_guest_limit",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "applies_to_all",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 15,
+        "name": "owner_host_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 16,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 17,
+        "name": "deactivated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "deactivated_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 19,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "7c465afb4e083b2c1839941053173b15215ca8c7dc4383dc46213edab1f43951"
+}

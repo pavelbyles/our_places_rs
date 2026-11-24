@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO listing (id, user_id, name, country, listing_structure_id, added_at, slug)\n               VALUES ($1, $2, 'Villa Notify Test', 'Jamaica', 1, NOW(), 'villa-notify-test')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "57b0c437f61a25328fe44797252b4049ebaa2ffd0b6b642e527820b791a2a604"
+}

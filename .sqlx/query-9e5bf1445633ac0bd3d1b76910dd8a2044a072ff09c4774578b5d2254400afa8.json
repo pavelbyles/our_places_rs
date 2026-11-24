@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            is_active,\n            deleted_at,\n            roles AS \"roles: Vec<UserRole>\"\n        FROM \"user\"\n        WHERE id = $1\n        FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "roles: Vec<UserRole>",
+        "type_info": {
+          "Custom": {
+            "name": "user_role[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "user_role",
+                  "kind": {
+                    "Enum": [
+                      "booker",
+                      "host",
+                      "admin",
+                      "staff"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "9e5bf1445633ac0bd3d1b76910dd8a2044a072ff09c4774578b5d2254400afa8"
+}

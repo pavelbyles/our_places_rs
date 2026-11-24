@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"count!\"\n        FROM booking_message m\n        JOIN conversation c ON c.id = m.conversation_id\n        JOIN listing l ON l.id = c.listing_id\n        WHERE m.read_at IS NULL\n          AND m.sender_id = c.guest_id\n          AND ($1::uuid IS NULL OR l.user_id = $1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fe0b4f301b041e4c7314556af439fd9a0ad15d9e8697e68533024d2d71092768"
+}

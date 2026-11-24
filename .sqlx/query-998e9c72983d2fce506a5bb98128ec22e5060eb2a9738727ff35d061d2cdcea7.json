@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH mine AS (\n            SELECT l.id, l.name, LEAST(GREATEST(l.days_between_bookings, 0), 365) AS gap\n            FROM listing l\n            WHERE l.deleted_at IS NULL AND ($2 OR l.user_id = $1)\n        ),\n        open_conflicts AS (\n            SELECT c.listing_id, COUNT(*) AS n\n            FROM calendar_conflict c\n            JOIN mine m ON m.id = c.listing_id\n            JOIN booking b ON b.id = c.booking_id\n            JOIN listing_blocked_dates k ON k.id = c.block_id\n            WHERE c.acknowledged_at IS NULL\n              AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > now()))\n              AND k.date_from - m.gap < b.date_to AND k.date_to + m.gap > b.date_from\n            GROUP BY c.listing_id\n        ),\n        failing AS (\n            SELECT f.listing_id, COUNT(*) AS n\n            FROM listing_calendar_feed f JOIN mine m ON m.id = f.listing_id\n            WHERE f.is_active AND f.consecutive_failures >= $3\n            GROUP BY f.listing_id\n        )\n        SELECT m.id AS \"listing_id!\", m.name AS \"listing_name!\",\n            COALESCE(oc.n, 0) AS \"open_conflicts!\", COALESCE(fl.n, 0) AS \"failing_feeds!\"\n        FROM mine m\n        LEFT JOIN open_conflicts oc ON oc.listing_id = m.id\n        LEFT JOIN failing fl ON fl.listing_id = m.id\n        WHERE oc.n IS NOT NULL OR fl.n IS NOT NULL\n        ORDER BY COALESCE(oc.n, 0) + COALESCE(fl.n, 0) DESC, m.name\n        LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "listing_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "open_conflicts!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "failing_feeds!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "998e9c72983d2fce506a5bb98128ec22e5060eb2a9738727ff35d061d2cdcea7"
+}

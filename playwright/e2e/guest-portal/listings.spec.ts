@@ -1,0 +1,107 @@
+import { test, expect } from '../fixtures/base.fixture.js';
+import { KNOWN_LISTINGS } from '../fixtures/test-data.js';
+import { createBooking, createGuest, createListingCopy, deactivateListing, loginGuest, psql } from '../fixtures/bookings-data.js';
+
+test.describe('Guest Portal - Listings Exploration Page', () => {
+  const targetVilla = KNOWN_LISTINGS.courtyardStudio;
+
+  test('should display active listings including The Courtyard Studio', async ({ page }) => {
+    const response = await page.goto('/listings');
+    expect(response?.status()).toBe(200);
+
+    // Main headings and filters
+    await expect(page.locator('h1')).toHaveText('Explore All Listings');
+    await expect(page.locator('input[placeholder*="Search by name or place"]')).toBeVisible();
+
+    // Listings grid should contain the seeded villa
+    const grid = page.locator('#listings-grid');
+    await expect(grid).toBeVisible();
+
+    // Verify villa card contents
+    const villaCard = grid.locator(`#listing-card-${targetVilla.slug}`);
+    await expect(villaCard).toBeVisible();
+    await expect(villaCard).toContainText('US$650');
+    await expect(villaCard).toContainText('New Kingston, Jamaica');
+    await expect(villaCard).toContainText('4 Guests');
+
+    // Verify link to detail page
+    const detailLink = villaCard.locator(`a[href="/listings/${targetVilla.slug}"]`).first();
+    await expect(detailLink).toBeVisible();
+  });
+
+  test('should navigate to listing detail page when clicking the listing name', async ({ page }) => {
+    await page.goto('/listings');
+
+    const villaCard = page.locator(`#listings-grid #listing-card-${targetVilla.slug}`);
+    const nameLink = villaCard.getByRole('heading').getByRole('link', { name: targetVilla.name });
+    await expect(nameLink).toBeVisible();
+
+    await nameLink.click();
+    await expect(page).toHaveURL(`/listings/${targetVilla.slug}`);
+    await expect(page.locator('h1')).toHaveText(targetVilla.name);
+  });
+
+  test('hides a listing from search, its page and checkout once deactivated', async ({ page }) => {
+    const listing = createListingCopy();
+    const card = page.locator(`#listing-card-${listing.slug}`);
+
+    await page.goto(`/listings?q=${encodeURIComponent(listing.name)}`);
+    await expect(card).toBeVisible();
+    expect((await page.goto(`/listings/${listing.slug}`))?.status()).toBe(200);
+
+    deactivateListing(listing.id);
+
+    await page.goto(`/listings?q=${encodeURIComponent(listing.name)}`);
+    await expect(card).toHaveCount(0);
+    expect((await page.goto(`/listings/${listing.slug}`))?.status()).toBe(404);
+
+    // Checkout sends anonymous visitors to login before it loads the listing.
+    await loginGuest(page, createGuest());
+    expect((await page.goto(`/checkout/${listing.slug}`))?.status()).toBe(404);
+  });
+
+  test('keeps a stay\'s name but drops its listing link once deactivated', async ({ page, request }) => {
+    const listing = createListingCopy();
+    const guest = createGuest();
+    const booking = await createBooking(request, guest.id, { confirmed: true, listingId: listing.id });
+    deactivateListing(listing.id);
+
+    await loginGuest(page, guest);
+    await page.goto('/bookings');
+    await expect(page.getByText(listing.name)).toBeVisible();
+    const actions = page.locator(`#booking-actions-${booking.id}`);
+    await expect(actions.getByRole('link', { name: 'Message host' })).toBeVisible();
+    await expect(actions.getByRole('link', { name: 'View Listing' })).toHaveCount(0);
+  });
+
+  test('links each card to its host\'s listings', async ({ page }) => {
+    const [hostSlug, hostName] = psql(`
+      SELECT u.slug || '|' || u.first_name || ' ' || u.last_name
+      FROM listing l JOIN "user" u ON u.id = l.user_id
+      WHERE l.slug = '${targetVilla.slug}';`).split('|');
+
+    await page.goto('/listings');
+    const hostLink = page.locator(`#listing-card-${targetVilla.slug} [data-host-link]`);
+    await expect(hostLink).toHaveText(hostName);
+    await expect(hostLink).toHaveAttribute('href', `/listings?host=${hostSlug}`);
+
+    await hostLink.click();
+    await expect(page).toHaveURL(new RegExp(`/listings\\?host=${hostSlug}$`));
+    await expect(page.locator('h1')).toHaveText(`Listings by ${hostName}`);
+    await expect(page.locator(`#listing-card-${targetVilla.slug}`)).toBeVisible();
+    const hosts = await page.locator('#listings-grid [data-host-link]').evaluateAll(
+      (links) => [...new Set(links.map((a) => a.getAttribute('href')))],
+    );
+    expect(hosts).toEqual([`/listings?host=${hostSlug}`]);
+
+    await page.locator('#clear-host-filter').click();
+    await expect(page).toHaveURL(/\/listings$/);
+    await expect(page.locator('h1')).toHaveText('Explore All Listings');
+  });
+
+  test('says so when a host slug has no listings', async ({ page }) => {
+    await page.goto('/listings?host=no-such-host-e2e');
+    await expect(page.locator('h1')).toHaveText('Host listings');
+    await expect(page.getByText('This host has no listings yet')).toBeVisible();
+  });
+});

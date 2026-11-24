@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT base_currency, target_currency FROM currency_exchange_rates WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "base_currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "target_currency",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "7a583fc3488cf25ba5c111b58943f8e8ab2923c0132c945342287851f8397935"
+}

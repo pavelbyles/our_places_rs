@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)\n        FROM host_payout_ledger\n        WHERE booking_id = $1\n          AND status IN ('processing'::payout_status, 'paid'::payout_status)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "08bf92509800465357561d0e17ec098de1866182272e5dcec3406b8732de2313"
+}

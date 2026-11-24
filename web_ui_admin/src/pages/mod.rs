@@ -1,0 +1,38 @@
+/// Legacy path redirects.
+pub mod aliases;
+/// Sign in and sign out.
+pub mod auth;
+/// Booking schedule and details.
+pub mod bookings;
+/// Currency administration card and actions.
+pub mod currencies;
+/// Dashboard.
+pub mod dashboard;
+#[cfg(test)]
+mod dashboard_tests;
+/// One pair's rate history, scheduled-rate deletion and retirement.
+pub mod exchange_rate_history;
+/// Exchange rate table.
+pub mod exchange_rates;
+/// Listings studio.
+pub mod listings;
+/// Forgot-password and single-use password setup/reset flows.
+pub mod password_reset;
+/// Payout ledger.
+pub mod payouts;
+/// Seasonal pricing overrides.
+pub mod pricing;
+/// Promo code management (#106).
+pub mod promo_codes;
+/// Host sign-up and verification.
+pub mod register;
+/// Inbox, request and enquiry detail (#105).
+pub mod requests;
+/// `/robots.txt`: disallow everything.
+pub mod robots;
+/// Host-scoped staff roster and listing assignments (`/admin/staff-users`).
+pub mod staff_users;
+/// Mobile-first turnover & cleaning crew dispatch board (`/admin/turnovers`).
+pub mod turnovers;
+/// User administration.
+pub mod users;

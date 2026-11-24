@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id FROM booking_enquiry\n            WHERE status = 'open' AND date_from <= $1\n            FOR UPDATE SKIP LOCKED\n        )\n        UPDATE booking_enquiry e\n        SET status = 'closed', closed_reason = 'expired', updated_at = NOW()\n        FROM due WHERE e.id = due.id\n        RETURNING e.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4ad2d1f2917d3969e5d99e793e4b23ca45cd901f624dfc9c17c0a96578e7e475"
+}

@@ -10,7 +10,7 @@ Collaborate with originators to transform raw ideas, pain points, or high-level 
 ## Intent Drafting Workflow
 
 ```mermaid
-graph TD
+flowchart TD
     RawIdea[Raw Idea / Requirement] --> Socratic[1. Socratic Scoping & Interview]
     Socratic --> Discovery[2. Identify Affected Systems & Invariants]
     Discovery --> Boundaries[3. Define Scope & Success Criteria]

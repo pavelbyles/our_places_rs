@@ -32,6 +32,8 @@ def run_assertions(benchmark, completion_text):
             passed = val not in completion_text
         elif atype == "contains_pattern":
             passed = bool(re.search(assertion.get("pattern", ""), completion_text, re.MULTILINE))
+        elif atype == "not_contains_pattern":
+            passed = not re.search(assertion.get("pattern", ""), completion_text, re.MULTILINE)
         
         results.append({
             "assertion": assertion,
@@ -166,6 +168,64 @@ cargo test --workspace
 git push origin feat/42-fix-branch
 gh pr comment 42 --body "Resolved unwrap violation by mapping DB connection error to AppError::DbError."
 ```
+""",
+        "sonarqube-guard:Static Analysis & Doc Coverage Guard Test": """
+/// Notification dispatch channels supported by the notification pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NotificationChannel {
+    /// Transactional email dispatch.
+    Email,
+    /// SMS message dispatch.
+    Sms,
+    /// Mobile push notification dispatch.
+    Push,
+}
+
+/// Strongly-typed configuration for notification services.
+#[derive(Debug, Clone)]
+pub struct NotificationConfig {
+    /// Target channel for notifications.
+    pub channel: NotificationChannel,
+    /// Environment variable key name for API credentials.
+    pub api_key_env: String,
+}
+""",
+        "retro:Session Retrospective Environment Optimization Test": """
+# Session Retrospective Report
+
+## 1. Summary of Session Friction
+- File discovery for static tax rates required 4 tool search calls.
+- `cargo check` failed due to missing SQLx offline query metadata update (`sqlx-data.json`).
+
+## 2. Actionable Environment Improvements
+
+### 1. Navigation Pointer for Statutory Tax Reference Data
+- **Category**: Navigation
+- **Enforcement**: Steering file update in `AGENTS.md`
+- **Actionable Fix**: Add navigation pointer linking `common/src/reference.rs`.
+
+### 2. Guardrail for SQLx Offline Metadata Verification
+- **Category**: Automated Checks & Guardrails
+- **Enforcement**: Deterministic pre-commit hook / CI check
+- **Actionable Fix**: Run `cargo sqlx prepare --check` before commit.
+""",
+        "plan-eng-review:Multi-Agent Engineering Plan Review Test": """
+### Lead Architect Review Findings
+- **Dimension Score (0–10)**: 9/10
+- **Hard Invariant Compliance**: PASS
+- **Review Panel**: Lead Architect, Edge Case Analyst, Security Reviewer, DB Guardian, QA Strategist
+- **Evaluation**: Evaluated plan compliance against CONSTRAINTS.md and zero-tolerance invariants.
+
+### Unified Engineering Review Scorecard
+| Dimension | Reviewer | Score (0–10) | Status | Key Blocker / Recommendation |
+| :--- | :--- | :---: | :---: | :--- |
+| Architecture & Flow | Lead Architect | 9/10 | Pass | Clean monadic combinator pipeline |
+| Edge Cases & Scale | Edge Case Analyst | 9/10 | Pass | Graceful connection reset handling |
+| Security Posture | Security Reviewer | 9/10 | Pass | Claims verified, V4 signed URLs enforced |
+| Concurrency & DB | DB Guardian | 10/10 | Pass | Row-level locks and 15m hold TTL verified |
+| Test Matrix & QA | QA Strategist | 9/10 | Pass | Comprehensive integration and unit coverage |
+
+**Gating Criteria**: 100% compliance with CONSTRAINTS.md. Average score: 9.2/10. Status: LOCKED.
 """
     }
 

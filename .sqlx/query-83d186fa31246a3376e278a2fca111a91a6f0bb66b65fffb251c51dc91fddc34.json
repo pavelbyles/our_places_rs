@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE reservation_change_request\n            SET status = 'expired'::reservation_change_status,\n                updated_at = NOW()\n            WHERE booking_id = $1 AND status = 'pending'::reservation_change_status\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "83d186fa31246a3376e278a2fca111a91a6f0bb66b65fffb251c51dc91fddc34"
+}

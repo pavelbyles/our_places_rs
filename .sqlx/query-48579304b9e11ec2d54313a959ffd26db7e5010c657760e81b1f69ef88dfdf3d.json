@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT blocked.date_from AS \"date_from!\", blocked.date_to AS \"date_to!\"\n        FROM (\n            SELECT\n                b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) AS date_from,\n                b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) AS date_to\n            FROM booking b\n            JOIN listing l ON l.id = b.listing_id\n            WHERE b.listing_id = $1\n              AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))\n              AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3\n              AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2\n            UNION ALL\n            SELECT\n                r.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365),\n                r.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365)\n            FROM booking_request r\n            JOIN listing l ON l.id = r.listing_id\n            WHERE r.listing_id = $1\n              AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()\n              AND r.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3\n              AND r.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2\n            UNION ALL\n            SELECT k.date_from - x.w, k.date_to + x.w\n            FROM listing_blocked_dates k\n            JOIN listing l ON l.id = k.listing_id\n            CROSS JOIN LATERAL (\n                SELECT\n                    LEAST(GREATEST(l.days_between_bookings, 0), 365) AS g,\n                    CASE WHEN k.source = 'ical_feed'\n                        THEN LEAST(GREATEST(l.days_between_bookings, 0), 365) ELSE 0 END AS w\n            ) x\n            WHERE k.listing_id = $1\n              AND k.date_from < $3 + x.g\n              AND k.date_to > $2 - x.g\n              AND k.date_from - x.w < $3\n              AND k.date_to + x.w > $2\n        ) AS blocked\n        ORDER BY blocked.date_from\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "date_from!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "date_to!",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "48579304b9e11ec2d54313a959ffd26db7e5010c657760e81b1f69ef88dfdf3d"
+}

@@ -5,11 +5,16 @@ service Lister {
   rpc GetListing (ListingRequest) returns (ListingResponse);
 }
 
+// Asks for one listing.
 message ListingRequest {
+  // ID of the listing.
   string id = 1;
 }
 
+// A listing.
 message ListingResponse {
+  // Display name.
   string name = 1;
+  // Longer description.
   string description = 2;
 }

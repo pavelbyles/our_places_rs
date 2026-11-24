@@ -3,24 +3,35 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+/// A stored session.
 #[derive(Debug, Clone)]
 pub struct SessionRecord {
+    /// Session ID.
     pub id: String,
+    /// The signed-in user, if any.
     pub user_id: Option<Uuid>,
+    /// Email address of the user, if any.
     pub email: Option<String>,
+    /// Which portal the session belongs to, such as `guest`.
     pub namespace: String,
+    /// Serialized session state.
     pub state: Vec<u8>,
+    /// When the session expires, as a Unix timestamp in seconds.
     pub ttl: i64,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When the session was last used.
     pub last_accessed_at: DateTime<Utc>,
 }
 
+/// Session storage.
 #[derive(Clone)]
 pub struct SessionsDb {
     pool: PgPool,
 }
 
 impl SessionsDb {
+    /// Session storage on this pool.
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -161,6 +172,7 @@ impl SessionsDb {
         Ok(())
     }
 
+    /// Deletes a session.
     pub async fn delete(&self, id: &str) -> Result<()> {
         sqlx::query!("DELETE FROM sessions WHERE id = $1", id)
             .execute(&self.pool)

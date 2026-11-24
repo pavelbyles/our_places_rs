@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            h.id,\n            h.turnover_id,\n            h.from_status,\n            h.to_status,\n            h.actor_user_id,\n            NULLIF(\n                BTRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')),\n                ''\n            ) AS actor_name,\n            h.actor_role,\n            h.entry_point,\n            h.reason,\n            h.created_at\n        FROM turnover_status_history h\n        LEFT JOIN \"user\" u ON u.id = h.actor_user_id\n        WHERE h.turnover_id = $1\n        ORDER BY h.created_at ASC, h.id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "turnover_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "from_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "to_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "actor_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "actor_role",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "entry_point",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      null,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "3d903466a6379089bfdaf863628bfc1fa5069e8d289dbdc8f31bbc4829e614fb"
+}

@@ -20,8 +20,8 @@ The project is built as an Isomorphic Rust Application, sharing core domain logi
 ### A. The Booking Engine (State Machine & Concurrency)
 The booking system is designed to prevent race conditions (double-bookings) and maintain a cryptographically strict audit log for accounting.
 - **Concurrency**: Uses PostgreSQL row-level locking (`SELECT ... FOR UPDATE` on the listing) rather than Redis to securely evaluate date overlaps.
-- **Reservation Holds**: When a user initiates checkout, a `pending_payment` record is created with a 15-minute `expires_at` hold. This naturally releases dates if the checkout is abandoned, requiring zero background cleanup workers.
-- **Shadow Users**: Unauthenticated users can initiate a checkout to secure the 15-minute hold. They are promoted to full users post-payment.
+- **Reservation Holds**: When a user initiates checkout, a `pending` record is created with an `expires_at` hold (`application.pending_hold_minutes`, default 120). This naturally releases dates if the checkout is abandoned, requiring zero background cleanup workers.
+- **Shadow Users**: Unauthenticated users can initiate a checkout to secure the hold. They are promoted to full users post-payment.
 - **Immutable Audit Trail**: Every status change (pending_payment -> confirmed -> completed -> refunded) is logged in a `booking_status_history` table for Tax Administration Jamaica (TAJ) compliance and host dispute resolution.
 
 ### B. Isomorphic Pricing & "Tri-Currency" Logic

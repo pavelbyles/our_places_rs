@@ -1,0 +1,483 @@
+use crate::apis::{PubSubMessage, PubSubPushEnvelope, configure_routes_with_provider};
+use crate::config::WorkerConfig;
+use crate::processor::{load_template, process_email_event, render_email_body};
+use crate::provider::MockEmailProvider;
+use actix_web::{App, test, web};
+use base64::Engine;
+use common::email::EmailNotificationEvent;
+use db_core::models::DbEmailStatus;
+use sqlx_db_tester::TestPg;
+use std::env;
+use std::path::Path;
+use std::sync::Arc;
+
+async fn setup_test_db() -> TestPg {
+    dotenvy::dotenv().ok();
+    static DATABASE_URL_ENV: &str = "DATABASE_URL";
+    let db_url = env::var(DATABASE_URL_ENV)
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
+    TestPg::new(db_url, Path::new("../../db_core/migrations"))
+}
+
+#[tokio::test]
+async fn test_render_email_body_templates() {
+    let otp_payload = serde_json::json!({ "code": "123456" });
+    let otp_html = render_email_body("user_verification_otp", &otp_payload);
+    assert!(otp_html.contains("123456"));
+    assert!(otp_html.contains("Welcome to Our Places!"));
+
+    let reset_payload = serde_json::json!({ "token": "rst_999" });
+    let reset_html = render_email_body("password_reset_otp", &reset_payload);
+    assert!(reset_html.contains("rst_999"));
+
+    let booking_payload = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "dates": "Oct 1 - Oct 5",
+        "total_price": "$1,200.00"
+    });
+    let booking_html = render_email_body("booking_confirmation", &booking_payload);
+    assert!(booking_html.contains("CONF123"));
+    assert!(booking_html.contains("$1,200.00"));
+
+    let message_payload = serde_json::json!({
+        "sender_name": "Alice",
+        "message_text": "What is the check-in time?"
+    });
+    let message_html = render_email_body("guest_host_message_notification", &message_payload);
+    assert!(message_html.contains("Alice"));
+    assert!(message_html.contains("What is the check-in time?"));
+}
+
+#[tokio::test]
+async fn test_render_booking_confirmation_guest_itemized_gct_and_receipt_link() {
+    let payload = serde_json::json!({
+        "confirmation_code": "BK-100",
+        "listing_name": "Seaside Sanctuary Villa",
+        "guest_name": "John Doe",
+        "date_from": "2026-11-01",
+        "date_to": "2026-11-06",
+        "total_price": "1725.00",
+        "currency": "USD",
+        "accommodation_net": "1000.00",
+        "cleaning_fee": "150.00",
+        "tax_rate": "0.1500",
+        "tax_amount": "172.50",
+        "platform_fee": "102.50",
+        "damage_deposit": "300.00",
+        "receipt_url": "http://localhost:8080/bookings/00000000-0000-0000-0000-000000000001/documents/REC-2026-BK-100"
+    });
+    let html = render_email_body("booking_confirmation_guest", &payload);
+    assert!(html.contains("BK-100"));
+    assert!(html.contains("Seaside Sanctuary Villa"));
+    assert!(html.contains("USD $1,000.00"));
+    assert!(html.contains("USD $150.00"));
+    assert!(html.contains("15%"));
+    assert!(html.contains("USD $172.50"));
+    assert!(html.contains("USD $102.50"));
+    assert!(html.contains("USD $300.00"));
+    assert!(html.contains("USD $1,725.00"));
+    assert!(html.contains("http://localhost:8080/bookings/00000000-0000-0000-0000-000000000001/documents/REC-2026-BK-100"));
+    assert!(html.contains("View Payment Receipt"));
+}
+
+#[tokio::test]
+async fn test_load_template_from_external_file() {
+    let content = load_template("user_verification_otp.html");
+    assert!(content.contains("Welcome to Our Places!"));
+    assert!(content.contains("{{code}}") || content.contains("{code}"));
+}
+
+#[tokio::test]
+async fn test_processor_successful_dispatch() {
+    let test_db = setup_test_db().await;
+    let pool = test_db.get_pool().await;
+
+    let email = db_core::email_outbox::insert_email_outbox(
+        &pool,
+        "guest@example.com",
+        "Your Booking",
+        "booking_confirmation",
+        &serde_json::json!({ "confirmation_code": "BK-100" }),
+        3,
+    )
+    .await
+    .expect("Failed to insert email");
+
+    let provider = MockEmailProvider::new();
+    let res = process_email_event(&pool, &provider, email.id, 3).await;
+    assert!(res.is_ok());
+
+    let sent = db_core::email_outbox::get_email_outbox_by_id(&pool, email.id)
+        .await
+        .expect("Query failed")
+        .expect("Not found");
+    assert_eq!(sent.status, DbEmailStatus::Sent);
+    assert!(sent.sent_at.is_some());
+    assert_eq!(sent.attempts, 1);
+
+    let sent_emails = provider.get_sent_emails().await;
+    assert_eq!(sent_emails.len(), 1);
+    assert_eq!(sent_emails[0].0, "guest@example.com");
+    assert_eq!(sent_emails[0].1, "Your Booking");
+}
+
+#[tokio::test]
+async fn test_processor_retry_until_success() {
+    let test_db = setup_test_db().await;
+    let pool = test_db.get_pool().await;
+
+    let email = db_core::email_outbox::insert_email_outbox(
+        &pool,
+        "guest_retry@example.com",
+        "OTP Code",
+        "user_verification_otp",
+        &serde_json::json!({ "code": "888888" }),
+        3,
+    )
+    .await
+    .expect("Failed to insert email");
+
+    // Fails on attempt 1, succeeds on attempt 2
+    let provider = MockEmailProvider::with_failures(1);
+    let res = process_email_event(&pool, &provider, email.id, 3).await;
+    assert!(res.is_ok());
+
+    let sent = db_core::email_outbox::get_email_outbox_by_id(&pool, email.id)
+        .await
+        .expect("Query failed")
+        .expect("Not found");
+    assert_eq!(sent.status, DbEmailStatus::Sent);
+    assert!(sent.sent_at.is_some());
+    assert_eq!(sent.attempts, 2);
+}
+
+#[tokio::test]
+async fn test_processor_retries_exhausted_permanently_fails() {
+    let test_db = setup_test_db().await;
+    let pool = test_db.get_pool().await;
+
+    let email = db_core::email_outbox::insert_email_outbox(
+        &pool,
+        "always_fails@example.com",
+        "Notification",
+        "user_verification_otp",
+        &serde_json::json!({ "code": "000000" }),
+        3,
+    )
+    .await
+    .expect("Failed to insert email");
+
+    // Fails 10 times, max_retries is 3
+    let provider = MockEmailProvider::with_failures(10);
+    let res = process_email_event(&pool, &provider, email.id, 3).await;
+    assert!(res.is_ok());
+
+    let failed = db_core::email_outbox::get_email_outbox_by_id(&pool, email.id)
+        .await
+        .expect("Query failed")
+        .expect("Not found");
+    assert_eq!(failed.status, DbEmailStatus::Failed);
+    assert_eq!(failed.attempts, 3);
+    assert!(failed.last_error.is_some());
+}
+
+#[tokio::test]
+async fn test_processor_idempotency_duplicate_event() {
+    let test_db = setup_test_db().await;
+    let pool = test_db.get_pool().await;
+
+    let email = db_core::email_outbox::insert_email_outbox(
+        &pool,
+        "idempotent@example.com",
+        "Single Send Only",
+        "user_verification_otp",
+        &serde_json::json!({ "code": "111111" }),
+        3,
+    )
+    .await
+    .expect("Failed to insert email");
+
+    let provider = MockEmailProvider::new();
+    // 1st dispatch
+    let res1 = process_email_event(&pool, &provider, email.id, 3).await;
+    assert!(res1.is_ok());
+    assert_eq!(provider.get_sent_emails().await.len(), 1);
+
+    // 2nd dispatch (duplicate delivery simulation)
+    let res2 = process_email_event(&pool, &provider, email.id, 3).await;
+    assert!(res2.is_ok());
+    // Must NOT have dispatched a second time
+    assert_eq!(provider.get_sent_emails().await.len(), 1);
+}
+
+#[actix_web::test]
+async fn test_pubsub_endpoint_authentication_and_dispatch() {
+    let test_db = setup_test_db().await;
+    let pool = test_db.get_pool().await;
+
+    let email = db_core::email_outbox::insert_email_outbox(
+        &pool,
+        "auth_test@example.com",
+        "Secret Test",
+        "user_verification_otp",
+        &serde_json::json!({ "code": "999999" }),
+        3,
+    )
+    .await
+    .expect("Failed to insert email");
+
+    let secret = "test_pubsub_secret_token";
+    let config = WorkerConfig {
+        pubsub_secret_token: Some(secret.to_string()),
+        max_retries: 3,
+        use_mock_provider: true,
+    };
+    let mock_provider = Arc::new(MockEmailProvider::new());
+
+    let app = test::init_service(App::new().app_data(web::Data::new(pool.clone())).configure(
+        |cfg| {
+            configure_routes_with_provider(cfg, mock_provider.clone(), config.clone());
+        },
+    ))
+    .await;
+
+    let event = EmailNotificationEvent { email_id: email.id };
+    let event_json = serde_json::to_vec(&event).unwrap();
+    let b64_data = base64::engine::general_purpose::STANDARD.encode(event_json);
+
+    let push_payload = PubSubPushEnvelope {
+        message: PubSubMessage {
+            data: b64_data,
+            attributes: Default::default(),
+            _message_id: Some("msg-123".into()),
+            _publish_time: None,
+        },
+    };
+
+    // 1. Without Token -> 401 Unauthorized
+    let req_unauth = test::TestRequest::post()
+        .uri("/pubsub/email-events")
+        .set_json(&push_payload)
+        .to_request();
+    let resp_unauth = test::call_service(&app, req_unauth).await;
+    assert_eq!(resp_unauth.status(), 401);
+
+    // 2. With Correct Token -> 200 OK
+    let req_auth = test::TestRequest::post()
+        .uri("/pubsub/email-events")
+        .insert_header(("X-PubSub-Secret-Token", secret))
+        .set_json(&push_payload)
+        .to_request();
+    let resp_auth = test::call_service(&app, req_auth).await;
+    assert_eq!(resp_auth.status(), 200);
+
+    // Verify status in DB is now Sent
+    let updated = db_core::email_outbox::get_email_outbox_by_id(&pool, email.id)
+        .await
+        .expect("Query failed")
+        .expect("Not found");
+    assert_eq!(updated.status, DbEmailStatus::Sent);
+}
+
+#[tokio::test]
+async fn promo_line_shows_on_guest_emails_with_a_code() {
+    let payload = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "USD",
+        "total_price": "1275.50",
+        "accommodation_net": "810.00",
+        "cleaning_fee": "90.00",
+        "promo_code": "SUMMER",
+        "promo_discount": "100.00",
+    });
+    let html = render_email_body("booking_confirmation_guest", &payload);
+    assert!(html.contains("Includes promo discount (SUMMER)"), "{html}");
+    assert!(html.contains("-USD $100.00"), "{html}");
+    assert!(!html.contains("{{promo_line}}"), "{html}");
+
+    let hold = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "dates": "2030-06-01 to 2030-06-08",
+        "total_price": "1275.50 USD",
+        "currency": "USD",
+        "promo_code": "SUMMER",
+        "promo_discount": "100.00",
+    });
+    let html = render_email_body("booking_confirmation", &hold);
+    assert!(
+        html.contains("Includes promo discount (SUMMER): -USD $100.00"),
+        "{html}"
+    );
+}
+
+#[tokio::test]
+async fn promo_line_leaves_nothing_behind_without_a_code_including_queued_emails() {
+    // Emails queued before this release have no promo fields at all.
+    let queued = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "USD",
+        "total_price": "1395.00",
+    });
+    for template in ["booking_confirmation_guest", "booking_confirmation"] {
+        let html = render_email_body(template, &queued);
+        assert!(!html.contains("promo"), "{template}: {html}");
+        assert!(!html.contains("{{promo_line}}"), "{template}: {html}");
+    }
+}
+
+#[tokio::test]
+async fn host_payout_shows_the_ledger_figure_and_promo() {
+    let payload = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "JMD",
+        "total_payout": "129600.00",
+        "promo_code": "SUMMER",
+        "promo_discount": "16000.00",
+    });
+    for (template, label) in [
+        ("booking_confirmation_host", "Host Payout"),
+        ("booking_updated_host", "Adjusted Host Payout"),
+    ] {
+        let html = render_email_body(template, &payload);
+        assert!(
+            html.contains(&format!("<strong>{label}:</strong> JMD $129,600.00")),
+            "{template}: {html}"
+        );
+        assert!(
+            html.contains("Includes promo discount (SUMMER): -JMD $16,000.00"),
+            "{template}: {html}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn host_payout_shows_no_blank_amount_without_a_figure() {
+    let payload = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "USD",
+        "total_payout": null,
+        "payout_impact": null,
+    });
+    for template in [
+        "booking_confirmation_host",
+        "booking_updated_host",
+        "booking_cancelled_host",
+    ] {
+        let html = render_email_body(template, &payload);
+        assert!(!html.contains("Payout"), "{template}: {html}");
+        assert!(!html.contains("{{"), "{template}: {html}");
+    }
+}
+
+#[tokio::test]
+async fn host_payout_on_a_cancellation_shows_the_retained_figure() {
+    let payload = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "USD",
+        "payout_impact": "180.00",
+    });
+    let html = render_email_body("booking_cancelled_host", &payload);
+    assert!(
+        html.contains("<strong>Net Payout Impact:</strong> USD $180.00"),
+        "{html}"
+    );
+}
+
+#[tokio::test]
+async fn turnover_and_staff_templates_render_escape_html_and_strip_bad_urls() {
+    let invite_html = render_email_body(
+        "staff_invite",
+        &serde_json::json!({
+            "first_name": "<b>Maya</b>",
+            "host_name": "Devon <script>alert(1)</script>",
+            "listing_names": ["Villa Coral", "Beach <img src=x onerror=alert(2)>"],
+            "setup_url": "https://admin.example/reset-password?token=abc123",
+            "expires_hours": 72
+        }),
+    );
+    assert!(
+        invite_html.contains("&lt;b&gt;Maya&lt;/b&gt;"),
+        "{invite_html}"
+    );
+    assert!(invite_html.contains("Devon &lt;script&gt;alert(1)&lt;/script&gt;"));
+    assert!(invite_html.contains("Villa Coral"));
+    assert!(invite_html.contains("https://admin.example/reset-password?token=abc123"));
+    assert!(!invite_html.contains("<script>"));
+    assert!(!invite_html.contains("<img"));
+    assert!(!invite_html.contains("{{"));
+
+    let reset_bad_url = render_email_body(
+        "password_reset_link",
+        &serde_json::json!({
+            "first_name": "Maya",
+            "reset_url": "javascript:alert(1)",
+            "expires_minutes": 30
+        }),
+    );
+    assert!(!reset_bad_url.contains("javascript:"), "{reset_bad_url}");
+    assert!(!reset_bad_url.contains("{{"));
+
+    let assigned_html = render_email_body(
+        "staff_listing_assigned",
+        &serde_json::json!({
+            "first_name": "Maya",
+            "host_name": "Devon",
+            "listing_names": ["Villa Palms"],
+            "dispatch_url": "http://localhost:3012/admin/turnovers"
+        }),
+    );
+    assert!(assigned_html.contains("Villa Palms"), "{assigned_html}");
+    assert!(assigned_html.contains("http://localhost:3012/admin/turnovers"));
+    assert!(!assigned_html.contains("{{"));
+
+    let comment_html = render_email_body(
+        "turnover_comment_notification",
+        &serde_json::json!({
+            "listing_name": "Villa Sunset",
+            "checkout_date": "2030-11-18",
+            "author_name": "<script>xss</script>",
+            "author_role": "staff",
+            "comment_body": "AC leak\n<img>need HVAC",
+            "turnover_url": "data:text/html,<script>bad</script>"
+        }),
+    );
+    assert!(comment_html.contains("Villa Sunset"), "{comment_html}");
+    assert!(comment_html.contains("2030-11-18"));
+    assert!(comment_html.contains("&lt;script&gt;xss&lt;/script&gt;"));
+    assert!(comment_html.contains("AC leak<br>&lt;img&gt;need HVAC"));
+    assert!(!comment_html.contains("data:text/html"));
+    assert!(!comment_html.contains("{{"));
+
+    let created_html = render_email_body(
+        "turnover_created",
+        &serde_json::json!({
+            "listing_name": "Villa Sunset",
+            "checkout_date": "2030-11-18",
+            "source_label": "Manual / Maintenance",
+            "title": "Deep clean & <script>alert(1)</script>",
+            "turnover_url": "https://admin.example/admin/turnovers/018f3a5e-6b9c-7000-8000-000000000001"
+        }),
+    );
+    assert!(created_html.contains("Villa Sunset"), "{created_html}");
+    assert!(created_html.contains("2030-11-18"));
+    assert!(created_html.contains("Manual / Maintenance"));
+    assert!(created_html.contains("Deep clean &amp; &lt;script&gt;alert(1)&lt;/script&gt;"));
+    assert!(created_html.contains("https://admin.example/admin/turnovers/"));
+    assert!(!created_html.contains("<script>"));
+    assert!(!created_html.contains("{{"));
+
+    let created_no_title_bad_url = render_email_body(
+        "turnover_created",
+        &serde_json::json!({
+            "listing_name": "Villa Palms",
+            "checkout_date": "2030-11-19",
+            "source_label": "Confirmed Booking",
+            "title": null,
+            "turnover_url": "javascript:alert(1)"
+        }),
+    );
+    assert!(created_no_title_bad_url.contains("Confirmed Booking"));
+    assert!(!created_no_title_bad_url.contains("Task:"));
+    assert!(!created_no_title_bad_url.contains("javascript:"));
+    assert!(!created_no_title_bad_url.contains("{{"));
+}

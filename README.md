@@ -28,18 +28,95 @@ High-performance, full-stack short-term property rental platform for luxury vill
 
 ---
 
-## 🔄 AI-Native SDLC & Agent Skills Reference
+## ✨ Platform Features
 
-The engineering workflow operates across 6 artifact-driven stages in an AI-Native Software Development Lifecycle (SDLC):
+### 👤 User Features
 
-| SDLC Stage | Primary Artifact | Associated Skills | Execution Role & Trigger |
+#### 🏖️ Guest Experience ([`web_ui_guest`](web_ui_guest))
+- **Luxury Villa Catalog & Search**: Browse curated Jamaican luxury villas and apartments with real-time HTMX filtering by destination, guest capacity, and amenities.
+- **Rich Property Detail Pages**: An editorial villa page with a full-width hero, sticky section nav, a highlights ribbon set by the host, room-by-room suites, grouped amenities, staff and paid add-ons, house policies, drive times to nearby places, and a full-size photo viewer with captions from host-set photo names.
+- **Dynamic Pricing & Multi-Currency Quotes**: Instant rate computation supporting multiple guest checkout currencies (USD, JMD, EUR, GBP, CAD) with statutory tax breakdowns (Jamaican GCT 15%).
+- **Frictionless Checkout & Temporary Holds**: Reserve dates with a `pending` hold (2 hours by default, configurable per deploy), preventing dates from being taken during checkout.
+- **Shadow User Guest Checkouts**: Guests can book immediately without prior account registration; temporary shadow accounts can be promoted post-checkout without losing booking state.
+- **Booking Management Hub**: Track upcoming, active, and past reservations, review booking confirmations, and request date changes or cancellations.
+- **Two-Way Direct Messaging**: Built-in messaging thread between guest and host linked directly to specific reservation codes.
+- **Verified Stay Reviews**: Submit post-stay reviews, ratings, and feedback via secure, single-use, 15-day invitation tokens issued upon stay completion.
+- **Self-Service Account & Security**: Guest registration, login, profile management, email verification, password reset flows, and account deactivation.
+
+#### 💼 Host & Administrator Experience ([`web_ui_admin`](web_ui_admin))
+- **Executive Operations Dashboard**: High-level KPI monitoring, real-time booking statistics, and operational health summaries.
+- **Property Catalog Management**: Create, edit, clone from existing templates, and manage villa listings, descriptions, and amenities.
+- **Listing Page Content**: Set each villa's highlights ribbon (3–6 items), amenity groups, suites (with a photo from the listing's uploads), staff & services, house policies, nearby places and guestbook quotes from the listing form; name each photo for alt text and viewer captions.
+- **Seasonal Rates & Price Overrides**: Configure custom seasonal pricing rules, holiday surcharges, and promotional rate adjustments with automated priority resolution.
+- **Centralized Reservation Pipeline**: Inspect all bookings across properties, filter by reservation status (`pending_payment`, `confirmed`, `completed`, `cancelled`), and process modifications.
+- **Host Direct Messaging Center**: Unified messaging portal to manage guest communications, view booking context, and respond to inquiries with unread indicators.
+- **Host Financial Earnings & Payout Ledger**: Track gross booking earnings, platform commissions, statutory tax withholdings, currency conversions, and net payout amounts with downloadable CSV financial reports.
+- **User & Role Administration**: Directory to view users, register accounts, manage roles (guests, hosts, administrators), and revoke active sessions.
+- **Exchange Rate Management**: Monitor and synchronize foreign currency conversion rates against base listing prices.
+
+---
+
+### ⚙️ Technical Features
+
+#### 🏗️ Architecture & Performance
+- **Isomorphic Rust Monorepo**: Shared domain models, validation logic, and pricing math in [`common`](common) compiled across backend Actix-web services and Topcoat SSR frontends.
+- **GCP Cloud Run Scale-to-Zero**: Tailored for minimal resource profiles ($0.25\text{ vCPU}$, $256\text{MB RAM}$) with cold start targets $< 300\text{ms}$ (p50) and $< 1\text{s}$ (p95).
+- **Topcoat SSR + HTMX Frontend**: Ultra-fast server-side rendering with reactive micro-interactions, Topcoat UI components, and TailwindCSS v4 styling—eliminating heavy client-side JavaScript SPA bundles.
+
+#### 🧮 Financial Precision & "Tri-Currency" Engine
+- **Arbitrary-Precision Arithmetic**: Strict usage of `rust_decimal::Decimal` across all monetary amounts, commission percentages, and tax rates; zero floating-point (`f32`/`f64`) operations.
+- **Tri-Currency Conversion Flow**: Converts Base Currency (villa nightly rate) $\rightarrow$ Payment Currency (guest checkout) $\rightarrow$ Statutory Taxes & Net Totals.
+- **Statutory Tax Rule Engine**: Automated calculation of Jamaican General Consumption Tax (GCT 15%) and local tax withholdings.
+
+#### 🔒 Concurrency, Data Integrity & State Machines
+- **Zero Double-Booking Guarantee**: PostgreSQL row-level locks (`SELECT ... FOR UPDATE`) during reservation creation ensure serialized availability checks without external distributed lock managers.
+- **Self-Expiring Hold Lifecycle**: `pending` holds carry an `expires_at` timestamp and release their dates the moment it passes; availability never depends on a cleanup job running.
+- **Immutable Status Audit Trail**: Every booking and payout status transition is immutably recorded in historical audit tables (`booking_status_history`, `host_payout_ledger`).
+- **Compile-Time Verified Queries**: SQLx queries validated at compile time against PostgreSQL schema for static type safety and query correctness in [`db_core`](db_core).
+
+#### 🖼️ Asynchronous Media Pipeline
+- **Direct-to-GCS V4 Signed Uploads**: Client uploads bypass backend application servers entirely via short-lived GCP V4 Signed URLs generated by [`listing_api`](app_api/listing_api), eliminating memory and network bottlenecks on Cloud Run.
+- **Event-Driven Pub/Sub Resizing**: GCS upload events trigger [`image_worker`](app_api/image_worker) to compress and generate multi-resolution WebP images (Mobile 640px, Tablet 1024px, Desktop 1920px).
+- **Responsive Delivery**: SSR templates serve standards-compliant HTML5 `<picture>` and `srcset` tags for adaptive browser bandwidth negotiation.
+
+#### 🛡️ Security, Identity & Verification
+- **Cryptographic Review Tokens**: Post-checkout reviews gated by single-use, 15-day time-bound verification tokens executed within atomic rating recalculation transactions.
+- **Authentication & Password Hardening**: JWT tokens validated via Actix request extractors in [`api_core`](app_api/api_core); passwords salted and hashed using `bcrypt` (work factor 12) via [`user_api`](app_api/user_api).
+- **Role-Based Access Control**: Separation of public, guest, host, and admin endpoints with granular route protection.
+- **Panic-Free Monadic Error Handling**: Strict adherence to `Result<T, E>` and `Option<T>` combinator pipelines (`.and_then()`, `.map()`, `?`) without `.unwrap()` or `.expect()` in production paths.
+
+#### 📊 Telemetry, Probes & Runtime Operations
+- **Full Actuator Suite**: Standardized `/health`, `/health/startup`, `/health/liveness`, and `/health/readiness` container probes via [`api_core`](app_api/api_core).
+- **Prometheus Scrape Endpoint**: Operational metrics (`/metrics`) tracking HTTP request rates, status distributions, and latency histograms.
+- **Dynamic Runtime Logging (`/loggers`)**: Dynamically inspect and adjust crate/module log levels (TRACE, DEBUG, INFO, WARN, ERROR) without restarting containers, secured by pre-shared token or Admin JWT.
+
+---
+
+## 🔄 AI-Native SDLC, Agent Skills & Workflows Reference
+
+The engineering workflow operates across an end-to-end, artifact-driven lifecycle:
+
+```mermaid
+flowchart TD
+    A["Issue / Kickoff<br/><code>/start-feature</code>"] --> B["Specification & Threat Model<br/><code>generate-spec</code><br/><code>grill-me</code>"]
+    B --> C["Engineering Plan Review<br/><code>/plan-eng-review</code><br/><code>planning-and-task-breakdown</code>"]
+    C --> D["Single Approval Checkpoint<br/>(User approves <code>tasks/plan.md</code>)"]
+    D --> E["Autonomous Implementation<br/><code>/build auto</code><br/><code>TDD</code> + <code>incremental-implementation</code>"]
+    E --> F["Simplification & Observability<br/><code>code-simplification</code><br/><code>observability-and-instrumentation</code>"]
+    F --> G["Quality Gates & Pre-PR Sanity<br/><code>CONSTRAINTS.md</code><br/><code>/sanity-check-workflow</code>"]
+    G --> H["Ship & PR Review<br/><code>/ship-pr</code>"]
+```
+
+### Stage-by-Stage Reference Matrix
+
+| SDLC Stage | Primary Artifact | Associated Skills & Workflows | Execution Role & Trigger |
 | :--- | :--- | :--- | :--- |
-| **Stage 1: Plan** | `intent.md` | [`draft-intent`](.agents/skills/draft-intent/SKILL.md)<br>[`router`](.agents/skills/router/SKILL.md)<br>[`grill-me`](.agents/skills/grill-me/skill.md)<br>[`create-worktree`](.agents/skills/create-worktree/SKILL.md) | **Ideation & Scoping**: Brainstorm raw ideas, scope MVP boundaries, capture non-negotiable invariants, and isolate git worktrees. |
-| **Stage 2: Design** | `spec.md` | [`generate-spec`](.agents/skills/generate-spec/SKILL.md)<br>[`grill-me`](.agents/skills/grill-me/skill.md)<br>[`assumption-review`](.agents/skills/assumption-review/SKILL.md)<br>[`edge-case-analysis`](.agents/skills/edge-case-analysis/SKILL.md)<br>[`failure-scenario-analysis`](.agents/skills/failure-scenario-analysis/SKILL.md)<br>[`resilience-exploration`](.agents/skills/resilience-exploration/SKILL.md)<br>[`security-review`](.agents/skills/security-review/SKILL.md)<br>[`security-posture-assessment`](.agents/skills/security-posture-assessment/SKILL.md)<br>[`risk-assessment`](.agents/skills/risk-assessment/SKILL.md)<br>[`vulnerability-analysis`](.agents/skills/vulnerability-analysis/SKILL.md) | **Specification & Policy Review**: Compress requirements and technical design into a single session; stress-test edge cases, failure blast radiuses, OWASP threats, and lock data models. |
-| **Stage 3: Build** | `plan.md`<br>Source Code / Diff | [`rust-core`](.agents/skills/rust-core/SKILL.md)<br>[`monad-design`](.agents/skills/monad-design/SKILL.md)<br>[`topcoat`](.agents/skills/topcoat/SKILL.md)<br>[`daisyui`](.agents/skills/daisyui/SKILL.md)<br>[`lint-hunter`](.agents/skills/lint-hunter/SKILL.md)<br>[`general-debug`](.agents/skills/general-debug/SKILL.md)<br>[`write-new-skill`](.agents/skills/write-new-skill/skill.md)<br>[`handoff`](.agents/skills/handoff/skill.md) | **Implementation**: Execute code implementation starting from `plan.md`; enforce panic-free monadic Rust (`Option`/`Result`), tri-currency math, and SSR/UI components. |
-| **Stage 4: Test** | Test Runs<br>`evals_results.json` | [`general-debug`](.agents/skills/general-debug/SKILL.md)<br>[`lint-hunter`](.agents/skills/lint-hunter/SKILL.md)<br>`chrome-devtools`<br>`a11y-debugging` | **Verification & Evals**: Run local test suites and compile checks; execute synthetic benchmark eval suites against agent skills to prevent prompt regressions; audit browser accessibility. |
-| **Stage 5: Deploy** | `REVIEW.md`<br>Pull Request | [`pr-analyzer`](.agents/skills/pr-analyzer/SKILL.md)<br>[`pr-remediation`](.agents/skills/pr-remediation/SKILL.md) | **PR Review & Remediation**: Run 8-point automated code quality review, autonomously sweep and fix review comments/broken CI checks, and sync documentation post-ship. |
-| **Stage 6: Maintain** | Incident `intent.md` | [`auto-triage-incident`](.agents/skills/auto-triage-incident/SKILL.md) | **Closed-Loop Incident Triage**: Ingest telemetry/log anomalies and metric breaches, isolate root causes, and write an `intent.md` proto-spec to restart Stage 1. |
+| **Stage 1: Plan** | `intent.md`<br>`tasks/plan.md` | [`/start-feature`](.agents/workflows/start-feature.md)<br>[`planning-and-task-breakdown`](.agents/skills/planning-and-task-breakdown/SKILL.md)<br>[`constraint-driven-development`](.agents/skills/constraint-driven-development/SKILL.md)<br>[`draft-intent`](.agents/skills/draft-intent/SKILL.md)<br>[`create-worktree`](.agents/skills/create-worktree/SKILL.md)<br>[`router`](.agents/skills/router/SKILL.md) | **Ideation & Scoping**: Kick off feature lifecycles with `/start-feature`, isolate git worktrees, scope requirements, decompose tasks into DAGs via `planning-and-task-breakdown`, and verify quality contracts in [`CONSTRAINTS.md`](CONSTRAINTS.md). |
+| **Stage 2: Design** | `spec.md` | [`generate-spec`](.agents/skills/generate-spec/SKILL.md)<br>[`grill-me`](.agents/skills/grill-me/SKILL.md)<br>[`security-and-hardening`](.agents/skills/security-and-hardening/SKILL.md)<br>[`assumption-review`](.agents/skills/assumption-review/SKILL.md)<br>[`edge-case-analysis`](.agents/skills/edge-case-analysis/SKILL.md)<br>[`failure-scenario-analysis`](.agents/skills/failure-scenario-analysis/SKILL.md)<br>[`resilience-exploration`](.agents/skills/resilience-exploration/SKILL.md)<br>[`security-posture-assessment`](.agents/skills/security-posture-assessment/SKILL.md)<br>[`risk-assessment`](.agents/skills/risk-assessment/SKILL.md) | **Specification & Policy Review**: Compress requirements and generate specs via `generate-spec`; interrogate intent with `grill-me`; audit STRIDE threats and OWASP Top 10 with `security-and-hardening`; stress-test failure blast radiuses and edge cases. |
+| **Stage 3: Build** | `tasks/plan.md`<br>Source Code / Diff | [`/build`](.agents/workflows/build.md)<br>[`/plan-eng-review`](.agents/workflows/plan-eng-review.md)<br>[`incremental-implementation`](.agents/skills/incremental-implementation/SKILL.md)<br>[`code-simplification`](.agents/skills/code-simplification/SKILL.md)<br>[`observability-and-instrumentation`](.agents/skills/observability-and-instrumentation/SKILL.md)<br>[`source-driven-development`](.agents/skills/source-driven-development/SKILL.md)<br>[`rust-core`](.agents/skills/rust-core/SKILL.md)<br>[`type-state`](.agents/skills/type-state/SKILL.md)<br>[`topcoat`](.agents/skills/topcoat/SKILL.md)<br>[`daisyui`](.agents/skills/daisyui/SKILL.md)<br>[`handoff`](.agents/skills/handoff/SKILL.md) | **Implementation**: Review architecture via `/plan-eng-review` and execute vertical slices via `/build` or autonomous `/build auto`; enforce thin slicing, Chesterton's Fence simplification, structured JSON telemetry, panic-free monadic Rust, and compile-time typestate patterns. |
+| **Stage 4: Test** | Test Runs<br>`evals_results.json` | [`test-driven-development`](.agents/skills/test-driven-development/SKILL.md)<br>[`/sanity-check-workflow`](.agents/workflows/sanity-check-workflow.md)<br>[`/audit-booking-flow`](.agents/workflows/audit-booking-flow.md)<br>[`/cloudrun-perf-audit`](.agents/workflows/cloudrun-perf-audit.md)<br>[`/eval-skills`](.agents/workflows/eval-skills.md)<br>[`sonarqube-guard`](.agents/skills/sonarqube-guard/SKILL.md)<br>[`playwright-e2e`](.agents/skills/playwright-e2e/SKILL.md)<br>[`general-debug`](.agents/skills/general-debug/SKILL.md)<br>[`lint-hunter`](.agents/skills/lint-hunter/SKILL.md) | **Verification & Evals**: Enforce Red-Green-Refactor with `test-driven-development`, pre-CI sanity checks via `/sanity-check-workflow`, financial & lock audits via `/audit-booking-flow`, and Cloud Run performance budgets via `/cloudrun-perf-audit`. |
+| **Stage 5: Deploy** | `REVIEW.md`<br>Pull Request | [`/ship-pr`](.agents/workflows/ship-pr.md)<br>[`/remediate-pr`](.agents/workflows/remediate-pr.md)<br>[`/document-release`](.agents/workflows/document-release.md)<br>[`pr-analyzer`](.agents/skills/pr-analyzer/SKILL.md)<br>[`pr-remediation`](.agents/skills/pr-remediation/SKILL.md) | **PR Review & Remediation**: Pre-merge readiness checks and PR creation via `/ship-pr` with 8-point automated code review via `pr-analyzer`; autonomously remediate CI checks via `/remediate-pr` and `pr-remediation`; sync documentation post-ship via `/document-release`. |
+| **Stage 6: Maintain** | Incident `intent.md` | [`/investigate`](.agents/workflows/investigate.md)<br>[`auto-triage-incident`](.agents/skills/auto-triage-incident/SKILL.md)<br>[`retro`](.agents/skills/retro/SKILL.md) | **Closed-Loop Incident Triage**: Ingest telemetry/log anomalies and metric breaches, isolate root causes via `/investigate`, and write an `intent.md` proto-spec via `auto-triage-incident` to restart Stage 1; conduct continuous agent environment retros via `retro`. |
 
 ---
 
@@ -47,3 +124,230 @@ The engineering workflow operates across 6 artifact-driven stages in an AI-Nativ
 
 * **System Architecture**: See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for monorepo crate taxonomies, database locking, and tri-currency pricing flows.
 * **Agent Rules & Invariants**: See [`.agents/AGENTS.md`](.agents/AGENTS.md) for hard monorepo rules, performance budgets (<300ms), and token efficiency directives.
+* **Environment & Deployment Config**: See [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for every environment variable per service and the GitHub Actions variables and secrets the deploy workflow needs.
+
+---
+
+## 🛣️ Module Route Reference
+
+### 1. `app_api/api_core` (Shared Actuator & Observability)
+
+Configured across all Actix-web microservices via `api_core::actuator::configure_actuator` or `api_core::startup::run`:
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/health` | Primary health check returning overall status and server uptime |
+| `GET` | `/health/startup` | Kubernetes / Cloud Run startup probe |
+| `GET` | `/health/liveness` | Container liveness probe |
+| `GET` | `/health/readiness` | Database connection pool readiness probe |
+| `GET` | `/metrics` | Prometheus metrics scrape endpoint (`http_requests_total`, `http_request_duration_seconds`) |
+| `GET` | `/info` | Application build metadata (name, version, git commit hash, build timestamp) |
+| `GET` | `/loggers` | List all active loggers and current log levels |
+| `POST` | `/loggers` | Dynamically update the root logging level |
+| `GET` | `/loggers/{name}` | Inspect the log level of a specific logger target |
+| `POST` | `/loggers/{name}` | Dynamically update the log level of a specific logger target |
+
+#### Dynamic Log Level Management & Secret Generation
+
+Loggers target either the root (`ROOT`), a monorepo crate (`booking_api`, `listing_api`, `user_api`, `db_core`, `api_core`), third-party libraries (`sqlx`, `actix_web`), or granular sub-modules (`booking_api::apis`, `db_core::booking`).
+
+Mutating log levels requires authentication via either **Method 1 (Pre-Shared Token)** or **Method 2 (Admin JWT)**:
+
+##### Method 1: Pre-Shared Token (`X-Actuator-Token`) — Recommended
+1. **Generate a Secret Token**:
+   ```bash
+   openssl rand -hex 32
+   ```
+2. **Configure Environment**:
+   Add to `.env` (or Cloud Run environment):
+   ```bash
+   ACTUATOR_SECRET="<your-generated-token>"
+   ```
+   *(Note: There is no default. If it is unset, `X-Actuator-Token` is rejected and only admin JWTs work.)*
+3. **Execute POST Request**:
+   ```bash
+   curl -X POST http://localhost:8081/loggers/booking_api::apis \
+     -H "X-Actuator-Token: <your-generated-token>" \
+     -H "Content-Type: application/json" \
+     -d '{"configuredLevel": "TRACE"}'
+   ```
+
+##### Method 2: Admin JWT Bearer Token (`Authorization: Bearer <token>`)
+The token's `sub` must be a user whose stored roles include `admin`; claims in
+the token (such as `role`) are ignored. Behind Cloud Run, send the user token in
+`X-Forwarded-Authorization` (the `Authorization` header carries the Google ID token).
+1. **Generate a JWT for an existing admin user** (signed with `JWT_SECRET`):
+   ```bash
+   python3 -c "
+   import jwt, time, os
+   secret = os.environ['JWT_SECRET']
+   payload = {'sub': '<admin-user-uuid>', 'exp': int(time.time()) + 3600}
+   print(jwt.encode(payload, secret, algorithm='HS256'))
+   "
+   ```
+2. **Execute POST Request**:
+   ```bash
+   curl -X POST http://localhost:8081/loggers/booking_api::apis \
+     -H "Authorization: Bearer <TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"configuredLevel": "TRACE"}'
+   ```
+
+##### Inspecting & Resetting Loggers
+- **Inspect current level**:
+  ```bash
+  curl -X GET http://localhost:8081/loggers/booking_api::apis
+  ```
+- **Reset to standard level**:
+  ```bash
+  curl -X POST http://localhost:8081/loggers/booking_api::apis \
+     -H "X-Actuator-Token: <your-generated-token>" \
+     -H "Content-Type: application/json" \
+     -d '{"configuredLevel": "INFO"}'
+  ```
+
+---
+
+### 2. `app_api/booking_api` (Booking Engine & Messaging)
+
+Core reservation state machine, availability locking, and guest messaging:
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/docs/swagger-ui/{_:.*}` | Interactive Swagger UI API documentation |
+| `GET` | `/api-docs/openapi.json` | OpenAPI 3.0 specification JSON |
+| `GET` | `/api/v1/bookings/availability` | Check date availability and compute tri-currency pricing quotes with statutory taxes |
+| `GET` | `/api/v1/bookings` | List all bookings with pagination and status filters |
+| `POST` | `/api/v1/bookings` | Create a new reservation hold (`pending`, expires after `application.pending_hold_minutes`) |
+| `GET` | `/api/v1/bookings/{id}` | Fetch booking details by booking UUID |
+| `PATCH` | `/api/v1/bookings/{id}` | Update booking details or transition status |
+| `DELETE` | `/api/v1/bookings/{id}` | Cancel or delete a reservation |
+| `GET` | `/api/v1/bookings/user/{id}` | List all reservations for a specific user |
+| `GET` | `/api/v1/bookings/listing/{id}` | List all reservations for a specific property listing |
+| `POST` | `/api/v1/bookings/{id}/transfer` | Transfer booking ownership from a shadow user to a registered user |
+| `GET` | `/api/v1/bookings/{id}/messages` | Retrieve message history for a booking |
+| `POST` | `/api/v1/bookings/{id}/messages` | Send a new message on a booking thread |
+| `PATCH` | `/api/v1/bookings/{id}/messages/read` | Mark booking messages as read |
+
+---
+
+### 3. `app_api/listing_api` (Listings, Pricing Overrides & Reviews)
+
+Property catalog management, GCS V4 signed upload URLs, seasonal pricing rules, and guest reviews:
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/docs/swagger-ui/{_:.*}` | Interactive Swagger UI API documentation |
+| `GET` | `/api-docs/openapi.json` | OpenAPI 3.0 specification JSON |
+| `GET` | `/api/v1/listings` | Search and filter villa listings with pagination |
+| `POST` | `/api/v1/listings` | Create a new villa or apartment listing |
+| `GET` | `/api/v1/listings/{id}` | Retrieve comprehensive listing details by UUID |
+| `PATCH` | `/api/v1/listings/{id}` | Update listing details, amenities, or configuration |
+| `DELETE` | `/api/v1/listings/{id}` | Delete a listing record |
+| `POST` | `/api/v1/listings/{id}/images/presign` | Generate Google Cloud Storage (GCS) V4 Signed URLs for direct client uploads |
+| `PATCH` | `/api/v1/listings/{id}/images/{image_id}` | Rename a photo (≤ 80 characters; empty clears the name) |
+| `GET` | `/api/v1/listings/{id}/reviews` | Fetch paginated guest reviews and ratings for a listing |
+| `GET` | `/api/v1/listings/{id}/price-overrides` | List seasonal and custom date-range price override rules |
+| `POST` | `/api/v1/listings/{id}/price-overrides` | Create a seasonal or promotional price override rule |
+| `PUT` | `/api/v1/listings/{id}/price-overrides/{override_id}` | Update an existing price override rule |
+| `DELETE` | `/api/v1/listings/{id}/price-overrides/{override_id}` | Delete a price override rule |
+| `GET` | `/api/v1/reviews/token/{token}` | Validate a review invitation token and fetch booking details |
+| `POST` | `/api/v1/reviews/token/{token}` | Submit a verified guest review and ratings |
+| `GET` | `/api/v1/reviews/booking/{booking_id}/token` | Fetch or generate a review invitation token for a completed stay |
+| `POST` | `/api/v1/reviews/{id}/reply` | Submit a host reply to a guest review |
+
+---
+
+### 4. `app_api/user_api` (Authentication, Users & Sessions)
+
+Identity management, JWT authentication, user lifecycle, and session tracking:
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/docs/swagger-ui/{_:.*}` | Interactive Swagger UI API documentation |
+| `GET` | `/api-docs/openapi.json` | OpenAPI 3.0 specification JSON |
+| `POST` | `/api/v1/sessions` | Create a user session |
+| `GET` | `/api/v1/sessions/{token_hash}` | Retrieve session details by token hash |
+| `DELETE` | `/api/v1/sessions/{token_hash}` | Invalidate/revoke a session by token hash |
+| `GET` | `/api/v1/users` | List all registered users with pagination and filtering |
+| `POST` | `/api/v1/users` | Register a new user account |
+| `GET` | `/api/v1/users/user/{email}` | Retrieve user profile by email address |
+| `PATCH` | `/api/v1/users/user/{id}` | Update user profile information |
+| `DELETE` | `/api/v1/users/user/{id}` | Soft-delete a user account |
+| `DELETE` | `/api/v1/users/user/{id}/sessions` | Revoke all active sessions for a user |
+| `POST` | `/api/v1/users/user/{id}/restore` | Restore a soft-deleted user account |
+| `DELETE` | `/api/v1/users/user/{id}/hard` | Permanently purge a user record from the database |
+| `GET` | `/api/v1/users/user/{email}/bookings` | Retrieve all bookings associated with a user email |
+| `GET` | `/api/v1/users/user/{email}/listings` | Retrieve all listings owned by a user email |
+| `POST` | `/api/v1/users/login` | Authenticate credentials and issue JWT / session token |
+| `POST` | `/api/v1/users/verify` | Verify email address via verification token |
+| `POST` | `/api/v1/users/resend-verification` | Resend verification email |
+| `POST` | `/api/v1/users/profile/password/request` | Request password reset email |
+| `POST` | `/api/v1/users/profile/password/confirm` | Reset password using confirmation token |
+| `POST` | `/api/v1/users/profile/email` | Update user email address |
+| `POST` | `/api/v1/users/profile/deactivate` | Deactivate user account |
+
+---
+
+### 5. `app_api/image_worker` (Image Processing Worker)
+
+Event-driven background worker handling image optimization and thumbnail generation:
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/docs/swagger-ui/{_:.*}` | Interactive Swagger UI API documentation |
+| `GET` | `/api-docs/openapi.json` | OpenAPI 3.0 specification JSON |
+| `POST` | `/api/v1/internal/image/process_image` | GCP Pub/Sub push subscription endpoint: resizes uploaded images to WebP (640px, 1024px, 1920px) and persists metadata |
+
+---
+
+### 6. `web_ui_guest` (Guest Portal)
+
+Public-facing Topcoat SSR & HTMX portal (default port `3010`). Sessions are server-side (`op_guest_session` cookie); the portal calls the APIs on the signed-in guest's behalf.
+
+| Method | Path | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/` | Page | Homepage with hero, search and featured villas |
+| `GET` | `/about` | Page | About Our Places |
+| `GET` | `/listings` | Page | Villa catalog with filters |
+| `GET` | `/listings/{slug}` | Page | Villa detail: hero, highlights ribbon, suites, amenity groups, services, policies, location, gallery and booking widget |
+| `GET` | `/listings/{slug}/quote` | HTMX | Price quote for the chosen dates and currency |
+| `GET` | `/listings/{slug}/calendar` | HTMX | Availability calendar month |
+| `GET`, `POST` | `/checkout/{slug}` | Page | Checkout (sign-in required); places the date hold |
+| `GET` | `/checkout-{jmd,eur,gbp,cad}/{id}` | Redirect | Legacy per-currency links → `/checkout/{id}?currency=` |
+| `GET` | `/bookings` | Page | The signed-in guest's bookings |
+| `GET`, `POST` | `/bookings/{id}/cancel` | HTMX | Cancellation dialog and submit |
+| `GET` | `/bookings/{id}/cancellation-quote` | HTMX | Refund quote |
+| `GET` | `/bookings/{id}/change-dates` | Page | Reservation change (dates / guests) |
+| `POST` | `/bookings/{id}/change-quote`, `/bookings/{id}/change-requests[/{rid}/{approve,decline,cancel}]` | HTMX | Reservation change quotes and requests |
+| `GET`, `POST` | `/bookings/{code}/messages` | Page | Messaging thread with the host |
+| `GET` | `/bookings/{id}/documents/{number}` | Page | Receipt / tax invoice / refund receipt |
+| `GET`, `POST` | `/login`, `/register`, `/verify`, `/verify/resend` | Page | Sign in, sign up and email verification |
+| `GET`, `POST` | `/logout` | Page | Sign out |
+| `GET`, `POST` | `/profile` | Page | Profile details |
+| `GET`, `POST` | `/reviews/submit` | Page | Review form (invitation token) |
+| `GET` | `/reviews/success` | Page | Review confirmation |
+| `GET` | `/terms`, `/cancellation-policy`, `/privacy-policy`, `/house-rules` | Page | Policy pages (draft placeholder text) |
+
+---
+
+### 7. `web_ui_admin` (Admin & Host Portal)
+
+Administrative Topcoat SSR & HTMX portal (default port `3012`). Short aliases (`/listings`, `/bookings`, `/payouts`, `/users`) redirect to their `/admin/...` routes.
+
+| Method | Path | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/admin` (`/` redirects) | Page | Dashboard with KPIs and recent bookings |
+| `GET`, `POST` | `/login`, `/register`, `/verify`, `/verify/resend`, `/logout` | Page | Sign in, host sign-up, verification, sign out |
+| `GET`, `POST` | `/admin/listings`, `/admin/listings/new`, `/admin/listings/clone/{slug}` | Page | Listing table, create and clone |
+| `GET`, `POST` | `/admin/listings/{id}`, `/admin/listings/{id}/edit` | Page | Listing detail and edit |
+| `POST` | `/admin/listings/{id}/images/presign`, `/admin/listings/{id}/images/remove`, `/admin/listings/{id}/images/name` | HTMX | Photo upload (signed URL, browser PUT to Cloud Storage), removal and naming |
+| `GET`, `POST` | `/admin/listings/{id}/pricing[/add,/remove]` | Page | Seasonal rates and price overrides |
+| `GET` | `/admin/bookings`, `/admin/bookings/export.csv` | Page | Bookings pipeline and CSV export |
+| `GET` | `/admin/bookings/{id}`, `/admin/bookings/{id}/cancellation-quote`, `/admin/bookings/{id}/documents/{number}` | HTMX / Page | Booking detail dialog, refund quote, tax documents |
+| `POST` | `/admin/bookings/{id}/status`, `/admin/bookings/{id}/door-code` | HTMX | Status changes and door codes |
+| `POST` | `/admin/bookings/{id}/change-requests[/{rid}/{approve,decline,cancel}]` | HTMX | Reservation change requests |
+| `GET`, `POST` | `/admin/bookings/{code}/messages` | Page | Messaging thread with the guest |
+| `GET`, `POST` | `/admin/payouts`, `/admin/payouts/export.csv`, `/admin/payouts/{id}/status` | Page | Payout ledger (status changes: admin only) |
+| `GET` | `/admin/exchange-rates` | Page | Exchange rate table (read-only) |
+| `GET`, `POST` | `/admin/users`, `/admin/users/new`, `/admin/users/{id}/edit`, `/admin/users/{id}[/delete,/restore]` | Page | User administration (admin only) |

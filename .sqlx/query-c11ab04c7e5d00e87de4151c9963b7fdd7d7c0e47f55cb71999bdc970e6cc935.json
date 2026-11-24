@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                u.id,\n                u.email,\n                u.first_name,\n                u.last_name,\n                u.password_hash,\n                u.is_active,\n                u.is_verified,\n                COALESCE(\n                    (SELECT MIN(hs.created_at) FROM host_staff hs WHERE hs.staff_user_id = u.id),\n                    u.created_at\n                ) AS \"invited_at!\"\n            FROM \"user\" u\n            WHERE u.id = $1\n              AND u.deleted_at IS NULL\n              AND (\n                  'staff'::user_role = ANY(u.roles)\n                  OR EXISTS (SELECT 1 FROM host_staff hs WHERE hs.staff_user_id = u.id)\n              )\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "password_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "invited_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "c11ab04c7e5d00e87de4151c9963b7fdd7d7c0e47f55cb71999bdc970e6cc935"
+}

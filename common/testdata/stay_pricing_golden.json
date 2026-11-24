@@ -1,0 +1,51 @@
+[
+  {
+    "name": "plain stay",
+    "listing": { "price_per_night": "200.00", "cleaning_fee": "0.00", "damage_deposit": "0.00", "guests_included": 1, "extra_guest_fee": "0.00", "weekly": null, "monthly": null },
+    "overrides": [],
+    "check_in": "2030-08-01", "check_out": "2030-08-04", "guests": 1, "currency": "USD", "rate": null,
+    "expected": { "nights": 3, "subtotal": "600.00", "stay_discount": "0", "cleaning_fee": "0.00", "tax": "90.00", "platform_fee": "30.00", "damage_deposit": "0.00", "total": "720.00" }
+  },
+  {
+    "name": "extra guests, cleaning fee and deposit",
+    "listing": { "price_per_night": "100.00", "cleaning_fee": "50.00", "damage_deposit": "200.00", "guests_included": 1, "extra_guest_fee": "20.00", "weekly": null, "monthly": null },
+    "overrides": [],
+    "check_in": "2030-08-01", "check_out": "2030-08-03", "guests": 3, "currency": "USD", "rate": null,
+    "expected": { "nights": 2, "subtotal": "280.00", "stay_discount": "0", "cleaning_fee": "50.00", "tax": "49.50", "platform_fee": "14.00", "damage_deposit": "200.00", "total": "593.50" }
+  },
+  {
+    "name": "override on some nights",
+    "listing": { "price_per_night": "200.00", "cleaning_fee": "0.00", "damage_deposit": "0.00", "guests_included": 1, "extra_guest_fee": "0.00", "weekly": null, "monthly": null },
+    "overrides": [ { "start_date": "2030-08-02", "end_date": "2030-08-10", "nightly_rate": "300.00", "min_nights": 2 } ],
+    "check_in": "2030-08-01", "check_out": "2030-08-04", "guests": 1, "currency": "USD", "rate": null,
+    "expected": { "nights": 3, "subtotal": "800.00", "stay_discount": "0", "cleaning_fee": "0.00", "tax": "120.00", "platform_fee": "40.00", "damage_deposit": "0.00", "total": "960.00" }
+  },
+  {
+    "name": "weekly discount",
+    "listing": { "price_per_night": "100.00", "cleaning_fee": "0.00", "damage_deposit": "0.00", "guests_included": 1, "extra_guest_fee": "0.00", "weekly": "10", "monthly": null },
+    "overrides": [],
+    "check_in": "2030-08-01", "check_out": "2030-08-08", "guests": 1, "currency": "USD", "rate": null,
+    "expected": { "nights": 7, "subtotal": "700.00", "stay_discount": "70.00", "cleaning_fee": "0.00", "tax": "94.50", "platform_fee": "31.50", "damage_deposit": "0.00", "total": "756.00" }
+  },
+  {
+    "name": "monthly discount beats weekly",
+    "listing": { "price_per_night": "100.00", "cleaning_fee": "0.00", "damage_deposit": "0.00", "guests_included": 1, "extra_guest_fee": "0.00", "weekly": "10", "monthly": "20" },
+    "overrides": [],
+    "check_in": "2030-08-01", "check_out": "2030-08-29", "guests": 1, "currency": "USD", "rate": null,
+    "expected": { "nights": 28, "subtotal": "2800.00", "stay_discount": "560.00", "cleaning_fee": "0.00", "tax": "336.00", "platform_fee": "112.00", "damage_deposit": "0.00", "total": "2688.00" }
+  },
+  {
+    "name": "everything in a non-base currency",
+    "listing": { "price_per_night": "100.00", "cleaning_fee": "50.00", "damage_deposit": "100.00", "guests_included": 1, "extra_guest_fee": "10.00", "weekly": "10", "monthly": null },
+    "overrides": [ { "start_date": "2030-08-03", "end_date": "2030-08-05", "nightly_rate": "120.00", "min_nights": 1 } ],
+    "check_in": "2030-08-01", "check_out": "2030-08-08", "guests": 2, "currency": "JMD", "rate": "160.000000",
+    "expected": { "nights": 7, "subtotal": "129600.00", "stay_discount": "12960.00", "cleaning_fee": "8000.00", "tax": "18696.00", "platform_fee": "5832.00", "damage_deposit": "16000.00", "total": "165168.00" }
+  },
+  {
+    "name": "a rate that needs rounding",
+    "listing": { "price_per_night": "123.45", "cleaning_fee": "33.33", "damage_deposit": "0.00", "guests_included": 1, "extra_guest_fee": "0.00", "weekly": null, "monthly": null },
+    "overrides": [],
+    "check_in": "2030-08-01", "check_out": "2030-08-04", "guests": 1, "currency": "JMD", "rate": "156.370000",
+    "expected": { "nights": 3, "subtotal": "57911.64", "stay_discount": "0", "cleaning_fee": "5211.81", "tax": "9468.52", "platform_fee": "2895.58", "damage_deposit": "0.00", "total": "75487.55" }
+  }
+]

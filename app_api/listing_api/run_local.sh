@@ -16,15 +16,15 @@ ensure_db_running() {
   (
     flock -x 200
     if ! is_db_ready; then
-      echo "Database is not running. Starting Docker container 'ourplaces_db'..."
+      echo "Database is not running on localhost:5432. Starting database via db-start..."
       ROOT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD/../..")
-      docker start ourplaces_db 2>/dev/null || (cd "$ROOT_DIR" && docker compose up -d db)
+      (cd "$ROOT_DIR" && (db-start 2>/dev/null || devenv shell db-start 2>/dev/null || docker start ourplaces_db 2>/dev/null || true))
     fi
   ) 200>"$lockfile"
 
   # Wait up to 5 seconds for DB readiness
   local retries=5
-  until is_db_ready || [ $retries -eq 0 ]; do
+  until is_db_ready || [[ $retries -eq 0 ]]; do
     echo "Waiting for database to accept connections... (${retries}s remaining)"
     sleep 1
     retries=$((retries - 1))
@@ -37,9 +37,16 @@ ensure_db_running
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 SAFE_BRANCH=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's|[/_]|-|g' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
 
+# With the local Cloud Storage emulator, sign upload URLs with the throwaway
+# key made by `gcs-start`: the emulator does not check signatures.
+LOCAL_GCS_SIGNING_KEY="${DEVENV_STATE:-}/fake-gcs/signing-key.json"
+if [[ -n "${STORAGE_EMULATOR_HOST:-}" && -f "$LOCAL_GCS_SIGNING_KEY" ]]; then
+  export GOOGLE_APPLICATION_CREDENTIALS="$LOCAL_GCS_SIGNING_KEY"
+fi
+
 # Run Listing API service
 EA__SERVER__PORT="${EA__SERVER__PORT:-8082}" \
 EA__DATABASE__HOST="${EA__DATABASE__HOST:-localhost}" \
 GCS_RAW_BUCKET="${GCS_RAW_BUCKET:-our-places-gcs-img-raw-${SAFE_BRANCH}}" \
 GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-/home/pav/Downloads/our-places-dev-sa-listing-api.json}" \
-cargo run
+exec cargo run

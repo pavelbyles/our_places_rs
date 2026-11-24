@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE booking_message SET read_at = NOW()\n        WHERE conversation_id = $1 AND sender_id <> $2 AND read_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d14810888b45c3835562d228f93b27ab831ec583c56759e498e0f9d549bc8d5"
+}

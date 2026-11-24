@@ -6,7 +6,7 @@ skills:
   - ../../skills/pr-analyzer/SKILL.md
   - ../../skills/create-worktree/SKILL.md
   - ../../skills/generate-spec/SKILL.md
-  - ../../skills/handoff/skill.md
+  - ../../skills/handoff/SKILL.md
 ---
 
 # Release & PR Auditor

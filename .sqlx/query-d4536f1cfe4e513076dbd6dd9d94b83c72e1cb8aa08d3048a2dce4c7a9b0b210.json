@@ -1,0 +1,128 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id, c.listing_id, c.feed_id, c.feed_name, c.block_id, c.booking_id,\n            b.confirmation_code, b.date_from AS booking_date_from, b.date_to AS booking_date_to,\n            COALESCE(CASE WHEN k.id IS NOT NULL THEN\n                (CASE WHEN k.date_from < b.date_to AND k.date_to > b.date_from\n                    THEN 'overlap' ELSE 'turnover' END)::calendar_conflict_kind END,\n                c.kind) AS \"kind!: ConflictKind\",\n            c.block_date_from, c.block_date_to, c.detected_at, c.reopened_at,\n            c.acknowledged_at, c.acknowledged_by,\n            CASE\n                WHEN c.block_id IS NULL THEN 'event_removed'\n                WHEN NOT (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > now()))\n                    THEN 'booking_released'\n                WHEN NOT (k.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < b.date_to\n                      AND k.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > b.date_from)\n                    THEN 'no_longer_overlapping'\n            END AS stale_reason\n        FROM calendar_conflict c\n        JOIN booking b ON b.id = c.booking_id\n        JOIN listing l ON l.id = c.listing_id\n        LEFT JOIN listing_blocked_dates k ON k.id = c.block_id\n        WHERE c.listing_id = $1 AND c.acknowledged_at IS NULL\n        ORDER BY 17 NULLS FIRST, c.detected_at DESC, c.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "feed_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "feed_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "block_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "confirmation_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "booking_date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "booking_date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "kind!: ConflictKind",
+        "type_info": {
+          "Custom": {
+            "name": "calendar_conflict_kind",
+            "kind": {
+              "Enum": [
+                "overlap",
+                "turnover"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "block_date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 11,
+        "name": "block_date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 12,
+        "name": "detected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "reopened_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "acknowledged_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "acknowledged_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 16,
+        "name": "stale_reason",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "d4536f1cfe4e513076dbd6dd9d94b83c72e1cb8aa08d3048a2dce4c7a9b0b210"
+}

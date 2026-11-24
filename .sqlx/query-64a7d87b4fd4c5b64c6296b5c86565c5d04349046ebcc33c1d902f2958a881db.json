@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT price_snapshot AS \"price_snapshot: Json<StayPriceSnapshot>\"\n                FROM booking_request_quote WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "price_snapshot: Json<StayPriceSnapshot>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "64a7d87b4fd4c5b64c6296b5c86565c5d04349046ebcc33c1d902f2958a881db"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)\n            VALUES ('FOO', 'BAR', 150.500000, $1)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "06233d7afb2aa8f2c0044857ca17d67819e2881b21280ba0bfbabef2a900207f"
+}

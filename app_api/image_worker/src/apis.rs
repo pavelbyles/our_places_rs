@@ -3,6 +3,7 @@ use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
 use google_cloud_storage::client::Storage;
 use serde::Deserialize;
+use tracing::Instrument;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
@@ -51,6 +52,10 @@ pub struct GcsObjectMetadata {
     pub _media_link: Option<String>,
     pub _crc32c: Option<String>,
     pub _etag: Option<String>,
+    /// Custom object metadata; `traceparent` holds the uploader's trace
+    /// context (see `common::gcs::TRACEPARENT_METADATA_HEADER`).
+    #[serde(default)]
+    pub metadata: std::collections::HashMap<String, String>,
 }
 
 use base64::Engine;
@@ -117,11 +122,30 @@ impl ImageTask<Initialized> {
     }
 }
 
+use std::sync::{Arc, OnceLock};
+use tokio::sync::Semaphore;
+
+/// Default maximum number of concurrent CPU-bound image resize/WebP encode tasks.
+/// Keeps Cloud Run memory/CPU bounded and prevents starving Tokio async workers.
+const DEFAULT_MAX_CONCURRENT_IMAGE_PROCESSING: usize = 2;
+
+fn image_process_semaphore() -> &'static Arc<Semaphore> {
+    static SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SEMAPHORE.get_or_init(|| {
+        let permits = std::env::var("IMAGE_PROCESS_CONCURRENCY")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(DEFAULT_MAX_CONCURRENT_IMAGE_PROCESSING);
+        Arc::new(Semaphore::new(permits))
+    })
+}
+
 impl ImageTask<Downloaded> {
-    pub fn process(self) -> Result<ImageTask<Processed>, actix_web::Error> {
+    fn process_sync(self) -> Result<ImageTask<Processed>, &'static str> {
         let img = image::load_from_memory(&self.state.0).map_err(|e| {
             tracing::error!("Failed to decode image data: {}", e);
-            actix_web::error::ErrorInternalServerError("Invalid image format")
+            "Invalid image format"
         })?;
 
         let variants_to_create = vec![
@@ -159,7 +183,7 @@ impl ImageTask<Downloaded> {
                     })
                     .map_err(|e| {
                         tracing::error!("Failed to create webp encoder: {}", e);
-                        actix_web::error::ErrorInternalServerError("Failed to encode image")
+                        "Failed to encode image"
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -169,6 +193,30 @@ impl ImageTask<Downloaded> {
             image_id: self.image_id,
             state: Processed(processed_variants),
         })
+    }
+
+    /// Offloads CPU-intensive image decoding, Lanczos3 resizing, and WebP encoding
+    /// onto Tokio's blocking thread pool behind a bounded concurrency semaphore so
+    /// concurrent Pub/Sub deliveries cannot starve async I/O or the DB pool.
+    pub async fn process(self) -> Result<ImageTask<Processed>, actix_web::Error> {
+        let _permit = Arc::clone(image_process_semaphore())
+            .acquire_owned()
+            .await
+            .map_err(|e| {
+                tracing::error!("Image processing semaphore closed: {}", e);
+                actix_web::error::ErrorInternalServerError("Image processor unavailable")
+            })?;
+
+        tokio::task::spawn_blocking(move || self.process_sync())
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Image processing blocking task panicked or cancelled: {}",
+                    e
+                );
+                actix_web::error::ErrorInternalServerError("Image processing task failed")
+            })?
+            .map_err(actix_web::error::ErrorInternalServerError)
     }
 }
 
@@ -204,10 +252,7 @@ impl ImageTask<Processed> {
                 continue;
             }
 
-            let public_url = format!(
-                "https://storage.googleapis.com/{}/{}",
-                public_bucket, target_name
-            );
+            let public_url = common::gcs::public_object_url(public_bucket, &target_name);
 
             db_variants.push((
                 self.listing_id,
@@ -248,14 +293,14 @@ impl ImageTask<Processed> {
 ///
 /// # Arguments
 ///
-/// * `req` - The Actix HTTP request.
+/// * `_req` - The Actix HTTP request.
 /// * `payload` - A JSON body containing the Google Cloud Pub/Sub message.
 /// * `pool` - The database connection pool.
 ///
 /// # Returns
 ///
 /// Returns a `200 OK` response on success, or an appropriate error on failure (e.g., 400 for invalid payload, 500 for database or GCS errors).
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/internal/image/process_image",
@@ -268,7 +313,7 @@ impl ImageTask<Processed> {
     )
 )]
 pub async fn process_image(
-    req: HttpRequest,
+    _req: HttpRequest,
     payload: web::Json<PubSubPayload>,
     pool: web::Data<sqlx::PgPool>,
 ) -> Result<impl Responder, Error> {
@@ -282,6 +327,18 @@ pub async fn process_image(
         }
     };
 
+    // Process the upload inside the trace of the request that presigned it.
+    let span = tracing::info_span!(
+        "process uploaded image",
+        otel.kind = "consumer",
+        object = %object_metadata.name,
+        trace_id = tracing::field::Empty,
+        span_id = tracing::field::Empty,
+        trace_sampled = tracing::field::Empty,
+    );
+    common::telemetry::continue_trace(&span, |name| object_metadata.metadata.get(name).cloned());
+
+    async move {
     tracing::info!(
         "Received PubSub notification for object: {} (bucket: {}, {:?})",
         object_metadata.name,
@@ -350,9 +407,7 @@ pub async fn process_image(
     };
 
     // 3. Downloads the original image from the raw GCS bucket.
-    use google_cloud_storage::client::Storage;
-
-    let client = match Storage::builder().build().await {
+    let client = match common::gcs::storage_client().await {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("Failed to configure GCS client auth: {}", e);
@@ -367,16 +422,13 @@ pub async fn process_image(
     let downloaded = task
         .download(&client, &object_metadata.bucket, &object_metadata.name)
         .await?;
-    let processed = downloaded.process()?;
+    let processed = downloaded.process().await?;
 
     let public_bucket = std::env::var("GCS_PUBLIC_BUCKET")
         .unwrap_or_else(|_| "our-places-gcs-img-public".to_string());
 
     let raw_url = raw_image_record.upload_url.unwrap_or_else(|| {
-        format!(
-            "https://storage.googleapis.com/{}/{}",
-            object_metadata.bucket, object_metadata.name
-        )
+        common::gcs::public_object_url(&object_metadata.bucket, &object_metadata.name)
     });
 
     processed
@@ -389,7 +441,10 @@ pub async fn process_image(
         )
         .await?;
 
-    Ok(HttpResponse::Ok().finish())
+        Ok::<HttpResponse, Error>(HttpResponse::Ok().finish())
+    }
+    .instrument(span)
+    .await
 }
 
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
@@ -397,10 +452,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[openapi(
         paths(
             process_image,
-            api_core::health::health_check,
         ),
         components(
-            schemas(PubSubPayload, PubSubMessage, PubSubAttributes, api_core::health::PingResponse)
+            schemas(PubSubPayload, PubSubMessage, PubSubAttributes)
         ),
         tags(
             (name = "images", description = "Image processing endpoints")
@@ -415,16 +469,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     );
 
     cfg.service(
-        web::scope("/api/v1/internal/image")
-            .route(
-                "/process_image",
-                web::post()
-                    .to(process_image)
-                    .wrap(from_fn(content_negotiation_middleware)),
-            )
-            .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
-            ),
+        web::scope("/api/v1/internal/image").route(
+            "/process_image",
+            web::post()
+                .to(process_image)
+                .wrap(from_fn(content_negotiation_middleware)),
+        ),
     );
 }

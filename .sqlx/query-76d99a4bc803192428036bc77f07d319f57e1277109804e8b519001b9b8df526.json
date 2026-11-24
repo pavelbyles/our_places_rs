@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status AS \"status: common::booking_request::EnquiryStatus\"\n        FROM booking_enquiry WHERE id = $1 AND listing_id = $2 AND guest_id = $3 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status: common::booking_request::EnquiryStatus",
+        "type_info": {
+          "Custom": {
+            "name": "enquiry_status",
+            "kind": {
+              "Enum": [
+                "open",
+                "closed"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "76d99a4bc803192428036bc77f07d319f57e1277109804e8b519001b9b8df526"
+}

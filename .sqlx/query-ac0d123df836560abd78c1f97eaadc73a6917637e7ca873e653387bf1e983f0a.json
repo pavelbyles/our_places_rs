@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id,\n            email,\n            password_hash,\n            first_name,\n            is_active,\n            deleted_at,\n            roles AS \"roles: Vec<UserRole>\"\n        FROM \"user\"\n        WHERE LOWER(BTRIM(email)) = $1\n        ORDER BY created_at ASC\n        LIMIT 1\n        FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "password_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "roles: Vec<UserRole>",
+        "type_info": {
+          "Custom": {
+            "name": "user_role[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "user_role",
+                  "kind": {
+                    "Enum": [
+                      "booker",
+                      "host",
+                      "admin",
+                      "staff"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "ac0d123df836560abd78c1f97eaadc73a6917637e7ca873e653387bf1e983f0a"
+}

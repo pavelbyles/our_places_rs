@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO listing_blocked_dates (listing_id, source, feed_id, external_uid, date_from, date_to)\n        SELECT $1, 'ical_feed', $2, e.uid, e.date_from, e.date_to\n        FROM UNNEST($3::text[], $4::date[], $5::date[]) AS e(uid, date_from, date_to)\n        ON CONFLICT (feed_id, external_uid) DO UPDATE SET\n            date_from = EXCLUDED.date_from, date_to = EXCLUDED.date_to, updated_at = now()\n        WHERE (listing_blocked_dates.date_from, listing_blocked_dates.date_to)\n              IS DISTINCT FROM (EXCLUDED.date_from, EXCLUDED.date_to)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray",
+        "DateArray",
+        "DateArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6bf9c1e087a1d53c056720fb70eac75b4295f78d46e45ffa97a222af6ad00b37"
+}

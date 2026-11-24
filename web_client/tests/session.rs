@@ -1,0 +1,110 @@
+//! Tests for typed sessions and route-guard decisions.
+
+use chrono::Utc;
+use common::models::SessionResponse;
+use uuid::Uuid;
+use web_client::session::{AdminRole, AdminSession, GuardError, GuestSession, login_redirect};
+
+fn session(namespace: &str, role: &str, user_id: Uuid) -> SessionResponse {
+    SessionResponse {
+        token_hash: "ab".repeat(32),
+        user_id,
+        email: "g@x.io".into(),
+        name: "Grace Hopper".into(),
+        role: role.into(),
+        namespace: namespace.into(),
+        created_at: Utc::now(),
+        last_accessed_at: Utc::now(),
+        expires_at: 0,
+    }
+}
+
+#[test]
+fn guest_session_from_guest_namespace() {
+    let id = Uuid::now_v7();
+    let s = GuestSession::from_session(&session("guest", "guest", id));
+    assert_eq!(s.map(|s| s.user_id), Ok(id));
+}
+
+#[test]
+fn guest_session_rejects_admin_namespace() {
+    let s = GuestSession::from_session(&session("admin", "admin", Uuid::now_v7()));
+    assert_eq!(s, Err(GuardError::Unauthenticated));
+}
+
+#[test]
+fn nil_user_id_is_never_a_session() {
+    assert_eq!(
+        GuestSession::from_session(&session("guest", "guest", Uuid::nil())),
+        Err(GuardError::Unauthenticated)
+    );
+    assert_eq!(
+        AdminSession::from_session(&session("admin", "admin", Uuid::nil())),
+        Err(GuardError::Unauthenticated)
+    );
+}
+
+#[test]
+fn admin_session_maps_roles() {
+    let admin = AdminSession::from_session(&session("admin", "SuperAdmin", Uuid::now_v7()));
+    let host = AdminSession::from_session(&session("admin", "host", Uuid::now_v7()));
+    assert_eq!(admin.map(|s| s.role), Ok(AdminRole::Admin));
+    assert_eq!(host.map(|s| s.role), Ok(AdminRole::Host));
+}
+
+#[test]
+fn admin_session_forbids_guest_role() {
+    let s = AdminSession::from_session(&session("admin", "guest", Uuid::now_v7()));
+    assert_eq!(s, Err(GuardError::Forbidden));
+}
+
+#[test]
+fn admin_role_guard_forbids_hosts() {
+    let host = AdminSession::from_session(&session("admin", "host", Uuid::now_v7()));
+    assert_eq!(
+        host.and_then(AdminSession::require_admin_role),
+        Err(GuardError::Forbidden)
+    );
+}
+
+#[test]
+fn staff_role_maps_to_dispatch_only_and_is_rejected_by_host_or_admin_and_admin_only() {
+    let staff = AdminSession::from_session(&session("admin", "staff", Uuid::now_v7()));
+    assert_eq!(staff.as_ref().map(|s| s.role), Ok(AdminRole::Staff));
+    assert_eq!(
+        staff.clone().and_then(AdminSession::require_host_or_admin),
+        Err(GuardError::Forbidden)
+    );
+    assert_eq!(
+        staff.and_then(AdminSession::require_admin_role),
+        Err(GuardError::Forbidden)
+    );
+
+    let host = AdminSession::from_session(&session("admin", "host", Uuid::now_v7()));
+    let admin = AdminSession::from_session(&session("admin", "admin", Uuid::now_v7()));
+    assert!(host.and_then(AdminSession::require_host_or_admin).is_ok());
+    assert!(admin.and_then(AdminSession::require_host_or_admin).is_ok());
+}
+
+#[test]
+fn login_redirect_encodes_next_path() {
+    assert_eq!(
+        login_redirect("/checkout/villa-a?check_in=2027-01-02&adults=2"),
+        "/login?redirect=%2Fcheckout%2Fvilla-a%3Fcheck_in%3D2027-01-02%26adults%3D2"
+    );
+}
+
+/// Without the router's cookie layer (e.g. a bare `Cx` in tests), the guards
+/// must refuse the request instead of panicking inside Topcoat's cookie jar.
+#[tokio::test]
+async fn guards_without_cookie_layer_are_unauthenticated() {
+    let cx = topcoat::context::Cx::default();
+    assert_eq!(
+        web_client::session::require_guest(&cx).await.err(),
+        Some(GuardError::Unauthenticated)
+    );
+    assert_eq!(
+        web_client::session::require_admin(&cx).await.err(),
+        Some(GuardError::Unauthenticated)
+    );
+}

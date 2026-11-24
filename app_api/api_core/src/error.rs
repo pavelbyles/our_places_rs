@@ -4,25 +4,65 @@ use std::fmt::{Debug, Formatter};
 use thiserror::Error;
 use validator::ValidationErrors;
 
+/// Unified HTTP API error enum returned by Actix route handlers.
 #[derive(Error)]
 pub enum ApiError {
+    /// Database error mapped from db_core.
     #[error("Database error")]
     Database(#[from] DbError),
 
+    /// Internal unexpected server error.
     #[error("Internal server error")]
     Internal,
 
+    /// Request payload validation failure.
     #[error("Validation error: {0}")]
     ValidationError(#[from] ValidationErrors),
 
+    /// Requested feature is currently toggled off.
     #[error("Feature '{0}' is currently disabled")]
     FeatureDisabled(String),
 
+    /// Authentication failed or caller lacks required credentials.
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
+    /// Caller is authenticated but lacks required permission.
     #[error("Forbidden: {0}")]
     Forbidden(String),
+
+    /// Requested booking dates overlap with an existing reservation.
+    #[error("The requested dates are no longer available")]
+    DateUnavailable,
+
+    /// The stay can't be priced as asked, such as below its minimum stay.
+    #[error("Stay refused: {0}")]
+    StayPricing(common::pricing::PricingError),
+
+    /// Reservation is in a terminal status or dates cannot be modified.
+    #[error("Booking not modifiable: {0}")]
+    BookingNotModifiable(String),
+
+    /// A reservation change request is already pending for this booking.
+    #[error("A reservation change request is already pending for this booking")]
+    ChangeRequestAlreadyPending,
+
+    /// Payment or refund settlement with payment gateway failed.
+    #[error("Payment settlement failed: {0}")]
+    PaymentSettlementFailed(String),
+
+    /// The request is well-formed but refused, with a stable code (422).
+    #[error("Unprocessable: {code}: {message}")]
+    Unprocessable {
+        /// Stable error code, such as `VALIDATION_ERROR`.
+        code: &'static str,
+        /// Text for the caller.
+        message: String,
+    },
+
+    /// A transient condition the client can resolve by retrying.
+    #[error("Service temporarily unavailable: {0}")]
+    ServiceUnavailable(String),
 }
 
 // Implement Debug manually to avoid printing the source error in production.
@@ -37,9 +77,59 @@ impl ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {
         match self {
             ApiError::Database(DbError::Sqlx(sqlx::Error::RowNotFound)) => StatusCode::NOT_FOUND,
-            ApiError::Database(DbError::ValidationError(_)) => StatusCode::BAD_REQUEST,
+            ApiError::Database(DbError::ValidationError(_) | DbError::StayInput(_)) => {
+                StatusCode::BAD_REQUEST
+            }
+            ApiError::Database(DbError::FxRateUnavailable { .. }) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             // Validation errors are always 400 Bad Request
-            ApiError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            ApiError::ValidationError(_) | ApiError::StayPricing(_) => StatusCode::BAD_REQUEST,
+            ApiError::Database(DbError::DateUnavailable) | ApiError::DateUnavailable => {
+                StatusCode::CONFLICT
+            }
+            ApiError::Database(DbError::ListingUnavailable) => StatusCode::CONFLICT,
+            ApiError::Database(DbError::BookingNotModifiable(_))
+            | ApiError::BookingNotModifiable(_) => StatusCode::CONFLICT,
+            ApiError::Database(DbError::ChangeRequestAlreadyPending)
+            | ApiError::ChangeRequestAlreadyPending => StatusCode::CONFLICT,
+            ApiError::PaymentSettlementFailed(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::Database(DbError::HoldExpired) => StatusCode::CONFLICT,
+            ApiError::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            ApiError::Database(DbError::CurrencyNotFound(_)) => StatusCode::NOT_FOUND,
+            ApiError::Database(
+                DbError::CurrencyUnknown(_)
+                | DbError::CurrencyInactive(_)
+                | DbError::EffectiveAtInPast
+                | DbError::EffectiveAtTooFar
+                | DbError::RateChangeConfirmationRequired { .. },
+            ) => StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::Database(
+                DbError::CurrencyInUse(_)
+                | DbError::CurrencyExists(_)
+                | DbError::RateAlreadyEffective
+                | DbError::RateVersionExists,
+            ) => StatusCode::CONFLICT,
+            ApiError::Database(DbError::LockContention(_)) => StatusCode::SERVICE_UNAVAILABLE,
+            ApiError::Database(DbError::PromoRefused(_)) => StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::Database(DbError::RequestRefused(refusal)) => {
+                StatusCode::from_u16(refusal.http_status()).unwrap_or(StatusCode::CONFLICT)
+            }
+            ApiError::Database(DbError::PromoCodeExists | DbError::PromoAlreadyDeactivated) => {
+                StatusCode::CONFLICT
+            }
+            ApiError::Database(
+                DbError::CalendarFeedLimit
+                | DbError::CalendarFeedDuplicate
+                | DbError::CalendarBlockManagedByFeed
+                | DbError::CalendarBlockDuplicate,
+            ) => StatusCode::CONFLICT,
+            ApiError::Database(DbError::CalendarSyncRateLimited { .. }) => {
+                StatusCode::TOO_MANY_REQUESTS
+            }
+            ApiError::Database(DbError::Forbidden(_))
+            | ApiError::Database(DbError::TurnoverTransitionForbidden(_)) => StatusCode::FORBIDDEN,
+            ApiError::Database(DbError::TurnoverStatusConflict { .. }) => StatusCode::CONFLICT,
             // All other database errors are likely internal server errors.
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
@@ -48,14 +138,130 @@ impl ResponseError for ApiError {
             ApiError::FeatureDisabled(_) => StatusCode::FORBIDDEN,
             ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             ApiError::Forbidden(_) => StatusCode::FORBIDDEN,
+            ApiError::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         }
     }
 
     fn error_response(&self) -> HttpResponse {
+        // Server-side failures return a bare body, so the log line is the only
+        // record of what went wrong. `Debug` prints the full cause chain.
+        if self.status_code().is_server_error() {
+            tracing::error!(status = %self.status_code(), error = ?self, "request failed");
+        }
+        if let Some(response) = self.currency_error_response() {
+            return response;
+        }
+        if let Some(response) = self.calendar_error_response() {
+            return response;
+        }
         match self {
+            ApiError::Database(DbError::RequestRefused(refusal)) => {
+                tracing::warn!(code = refusal.code(), "request action refused");
+                HttpResponse::build(self.status_code()).json(serde_json::json!({
+                    "code": refusal.code(),
+                    "message": refusal.message(),
+                }))
+            }
+            ApiError::Database(DbError::HoldExpired) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "HOLD_EXPIRED",
+                    "message": "The reservation hold has expired. Please start a new booking."
+                }))
+            }
+            ApiError::ServiceUnavailable(msg) => HttpResponse::ServiceUnavailable()
+                .insert_header(("Retry-After", "1"))
+                .json(serde_json::json!({
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": msg
+                })),
             ApiError::ValidationError(e) => HttpResponse::BadRequest().json(e),
+            ApiError::Unprocessable { code, message } => {
+                tracing::warn!(code, %message, "request refused");
+                HttpResponse::UnprocessableEntity()
+                    .json(serde_json::json!({ "code": code, "message": message }))
+            }
+            ApiError::StayPricing(refused) => {
+                tracing::warn!(code = refused.code(), %refused, "stay refused");
+                let required = match refused {
+                    common::pricing::PricingError::MinNightsNotMet { required, .. } => {
+                        Some(*required)
+                    }
+                    common::pricing::PricingError::InvalidDateRange => None,
+                };
+                HttpResponse::BadRequest().json(serde_json::json!({
+                    "code": refused.code(),
+                    "message": refused.message(),
+                    "required_nights": required,
+                }))
+            }
             ApiError::Database(DbError::ValidationError(msg)) => {
                 HttpResponse::BadRequest().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::Database(DbError::StayInput(refused)) => HttpResponse::BadRequest().json(
+                serde_json::json!({
+                    "code": refused.code(),
+                    "message": refused.message()
+                }),
+            ),
+            ApiError::Database(DbError::PromoRefused(refusal)) => HttpResponse::UnprocessableEntity()
+                .json(serde_json::json!({
+                    "code": refusal.code(),
+                    "message": refusal.message()
+                })),
+            ApiError::Database(DbError::PromoCodeExists) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "PROMO_CODE_EXISTS",
+                    "message": "A promo code with this value already exists."
+                }))
+            }
+            ApiError::Database(DbError::PromoAlreadyDeactivated) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "PROMO_ALREADY_DEACTIVATED",
+                    "message": "This promo code has already been deactivated."
+                }))
+            }
+            ApiError::Database(DbError::FxRateUnavailable { base, target }) => {
+                HttpResponse::UnprocessableEntity().json(serde_json::json!({
+                    "code": "FX_RATE_UNAVAILABLE",
+                    "message": format!("Foreign exchange rate unavailable for currency pair: {} -> {}", base, target)
+                }))
+            }
+            ApiError::DateUnavailable | ApiError::Database(DbError::DateUnavailable) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "DATE_UNAVAILABLE",
+                    "message": "The requested dates are no longer available."
+                }))
+            }
+            ApiError::Database(DbError::ListingUnavailable) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "LISTING_UNAVAILABLE",
+                    "message": "This listing is not available for booking."
+                }))
+            }
+            ApiError::BookingNotModifiable(msg) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "BOOKING_NOT_MODIFIABLE",
+                    "message": msg
+                }))
+            }
+            ApiError::Database(DbError::BookingNotModifiable(msg)) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "BOOKING_NOT_MODIFIABLE",
+                    "message": msg
+                }))
+            }
+            ApiError::ChangeRequestAlreadyPending
+            | ApiError::Database(DbError::ChangeRequestAlreadyPending) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "CHANGE_REQUEST_ALREADY_PENDING",
+                    "message": "A reservation change request is already pending for this booking."
+                }))
+            }
+            ApiError::PaymentSettlementFailed(msg) => {
+                HttpResponse::UnprocessableEntity().json(serde_json::json!({
+                    "code": "PAYMENT_SETTLEMENT_FAILED",
+                    "message": msg
+                }))
             }
             ApiError::Unauthorized(msg) => {
                 HttpResponse::Unauthorized().json(serde_json::json!({ "error": msg }))
@@ -63,15 +269,166 @@ impl ResponseError for ApiError {
             ApiError::FeatureDisabled(msg) => {
                 HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
             }
-            ApiError::Forbidden(msg) => {
+            ApiError::Forbidden(msg) | ApiError::Database(DbError::Forbidden(msg)) => {
                 HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::Database(DbError::TurnoverTransitionForbidden(err)) => {
+                let msg = err.to_string();
+                HttpResponse::Forbidden().json(serde_json::json!({
+                    "code": "TURNOVER_TRANSITION_FORBIDDEN",
+                    "error": msg,
+                    "message": msg,
+                }))
+            }
+            ApiError::Database(DbError::TurnoverStatusConflict { expected, actual }) => {
+                let msg = format!(
+                    "Turnover status changed concurrently (expected {}, found {}). Refresh and try again.",
+                    expected.label(),
+                    actual.label(),
+                );
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "TURNOVER_STATUS_CONFLICT",
+                    "error": msg,
+                    "message": msg,
+                    "expected_status": expected,
+                    "actual_status": actual,
+                }))
             }
             _ => HttpResponse::build(self.status_code()).finish(),
         }
     }
 }
 
+impl ApiError {
+    /// Structured bodies for calendar sync refusals, logged at `warn`; `None`
+    /// for every other error.
+    fn calendar_error_response(&self) -> Option<HttpResponse> {
+        let ApiError::Database(db) = self else {
+            return None;
+        };
+        let (code, message) = match db {
+            DbError::CalendarFeedLimit => (
+                "CALENDAR_FEED_LIMIT",
+                "A listing can import at most 5 calendars.".to_string(),
+            ),
+            DbError::CalendarFeedDuplicate => (
+                "CALENDAR_FEED_DUPLICATE",
+                "This calendar is already imported for the listing.".to_string(),
+            ),
+            DbError::CalendarBlockManagedByFeed => (
+                "CALENDAR_BLOCK_MANAGED_BY_FEED",
+                "These dates come from an imported calendar. Change them in that calendar."
+                    .to_string(),
+            ),
+            DbError::CalendarBlockDuplicate => (
+                "CALENDAR_BLOCK_DUPLICATE",
+                "These dates are already blocked.".to_string(),
+            ),
+            DbError::CalendarSyncRateLimited { retry_after_secs } => {
+                tracing::warn!(retry_after_secs, "calendar sync rate limited");
+                return Some(
+                    HttpResponse::TooManyRequests()
+                        .insert_header(("Retry-After", retry_after_secs.max(&1).to_string()))
+                        .json(serde_json::json!({
+                            "code": "CALENDAR_SYNC_RATE_LIMITED",
+                            "message": "Calendars were synced less than a minute ago.",
+                            "retry_after_secs": retry_after_secs,
+                        })),
+                );
+            }
+            _ => return None,
+        };
+        tracing::warn!(code, "calendar request refused");
+        Some(
+            HttpResponse::build(self.status_code())
+                .json(serde_json::json!({ "code": code, "message": message })),
+        )
+    }
+
+    /// Structured bodies for currency and exchange-rate administration errors.
+    /// Business rejections are logged at `warn`; `None` for every other error.
+    fn currency_error_response(&self) -> Option<HttpResponse> {
+        let ApiError::Database(db) = self else {
+            return None;
+        };
+        let (code, message, extra) = match db {
+            DbError::CurrencyNotFound(c) | DbError::CurrencyUnknown(c) => (
+                "CURRENCY_NOT_FOUND",
+                format!("Currency {c} does not exist."),
+                serde_json::json!({ "currency": c }),
+            ),
+            DbError::CurrencyInactive(c) => (
+                "CURRENCY_INACTIVE",
+                format!("Currency {c} is not active."),
+                serde_json::json!({ "currency": c }),
+            ),
+            DbError::CurrencyInUse(listings) => (
+                "CURRENCY_IN_USE",
+                "Listings still use this currency. Change them first.".to_string(),
+                serde_json::json!({ "listings": listings }),
+            ),
+            DbError::CurrencyExists(c) => (
+                "CURRENCY_EXISTS",
+                format!("Currency {c} already exists."),
+                serde_json::json!({ "currency": c }),
+            ),
+            DbError::EffectiveAtInPast => (
+                "EFFECTIVE_AT_IN_PAST",
+                "Rates cannot take effect in the past.".to_string(),
+                serde_json::json!({}),
+            ),
+            DbError::EffectiveAtTooFar => (
+                "EFFECTIVE_AT_TOO_FAR",
+                "Rates can be scheduled at most a year ahead.".to_string(),
+                serde_json::json!({}),
+            ),
+            DbError::RateAlreadyEffective => (
+                "RATE_ALREADY_EFFECTIVE",
+                "This rate has already taken effect and cannot be deleted.".to_string(),
+                serde_json::json!({}),
+            ),
+            DbError::RateVersionExists => (
+                "RATE_VERSION_EXISTS",
+                "A rate for this pair and effective time already exists.".to_string(),
+                serde_json::json!({}),
+            ),
+            DbError::RateChangeConfirmationRequired {
+                baseline,
+                proposed,
+                deviation_pct,
+            } => (
+                "RATE_CHANGE_CONFIRMATION_REQUIRED",
+                "The new rate differs from the current rate by more than 5%. Confirm to save it."
+                    .to_string(),
+                serde_json::json!({
+                    "baseline_rate": baseline.to_string(),
+                    "proposed_rate": proposed.to_string(),
+                    "deviation_pct": deviation_pct.map(|d| d.to_string()),
+                }),
+            ),
+            DbError::LockContention(operation) => {
+                return Some(
+                    HttpResponse::ServiceUnavailable()
+                        .insert_header(("Retry-After", "1"))
+                        .json(serde_json::json!({
+                            "code": "SERVICE_UNAVAILABLE",
+                            "message": format!("The {operation} is busy. Please retry."),
+                        })),
+                );
+            }
+            _ => return None,
+        };
+        tracing::warn!(code, %message, "currency request rejected");
+        let mut body = serde_json::json!({ "code": code, "message": message });
+        if let (Some(target), serde_json::Value::Object(fields)) = (body.as_object_mut(), extra) {
+            target.extend(fields);
+        }
+        Some(HttpResponse::build(self.status_code()).json(body))
+    }
+}
+
 // A helper function to format the error chain for logging.
+/// Writes an error and each of its causes.
 pub fn error_chain_fmt(e: &impl std::error::Error, f: &mut Formatter<'_>) -> std::fmt::Result {
     writeln!(f, "{}\n", e)?;
     let mut current = e.source();
@@ -83,4 +440,357 @@ pub fn error_chain_fmt(e: &impl std::error::Error, f: &mut Formatter<'_>) -> std
 }
 
 // A custom `Result` type for our API.
+/// A result with an [`ApiError`].
 pub type Result<T> = std::result::Result<T, ApiError>;
+
+#[cfg(test)]
+mod stay_input_error_tests {
+    use super::*;
+    use actix_web::body::to_bytes;
+    use common::availability::StayInputError;
+
+    #[tokio::test]
+    async fn every_refusal_is_a_400_with_its_code_and_message() {
+        for refused in [
+            StayInputError::DateMalformed,
+            StayInputError::DateMissing,
+            StayInputError::CheckOutNotAfterCheckIn,
+            StayInputError::InPast,
+            StayInputError::TooLong { max_nights: 30 },
+            StayInputError::InvalidGuests,
+            StayInputError::InvalidSearchText,
+        ] {
+            let api = ApiError::Database(DbError::StayInput(refused));
+            assert_eq!(api.status_code(), StatusCode::BAD_REQUEST, "{refused:?}");
+            let resp = api.error_response();
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{refused:?}");
+            let bytes = match to_bytes(resp.into_body()).await {
+                Ok(bytes) => bytes,
+                Err(e) => panic!("body: {e}"),
+            };
+            let body: serde_json::Value = match serde_json::from_slice(&bytes) {
+                Ok(body) => body,
+                Err(e) => panic!("json: {e}"),
+            };
+            assert_eq!(body["code"], refused.code(), "{refused:?}");
+            assert_eq!(body["message"], refused.message(), "{refused:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_short_stay_is_a_400_naming_the_minimum() {
+        use common::pricing::PricingError;
+        let api = ApiError::StayPricing(PricingError::MinNightsNotMet {
+            required: 5,
+            provided: 4,
+        });
+        assert_eq!(api.status_code(), StatusCode::BAD_REQUEST);
+        let bytes = match to_bytes(api.error_response().into_body()).await {
+            Ok(bytes) => bytes,
+            Err(e) => panic!("body: {e}"),
+        };
+        let body: serde_json::Value = match serde_json::from_slice(&bytes) {
+            Ok(body) => body,
+            Err(e) => panic!("json: {e}"),
+        };
+        assert_eq!(body["code"], "MINIMUM_STAY_NOT_MET");
+        assert_eq!(
+            body["message"],
+            "These dates need a stay of at least 5 nights."
+        );
+        assert_eq!(body["required_nights"], 5);
+    }
+}
+
+#[cfg(test)]
+mod promo_error_tests {
+    use super::*;
+    use actix_web::body::to_bytes;
+    use common::promo::PromoRefusal;
+
+    async fn render(err: DbError) -> (StatusCode, serde_json::Value) {
+        let api = ApiError::Database(err);
+        let status = api.status_code();
+        let resp = api.error_response();
+        assert_eq!(
+            resp.status(),
+            status,
+            "status_code and error_response agree"
+        );
+        let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
+        (status, serde_json::from_slice(&bytes).expect("json body"))
+    }
+
+    #[tokio::test]
+    async fn request_refusal_mapping_gives_each_status_and_code() {
+        use common::booking_request::RequestRefusal;
+        for refusal in RequestRefusal::ALL {
+            let api = ApiError::Database(DbError::RequestRefused(refusal));
+            assert_eq!(
+                api.status_code().as_u16(),
+                refusal.http_status(),
+                "{refusal:?}"
+            );
+            let (status, body) = render(DbError::RequestRefused(refusal)).await;
+            assert_eq!(status.as_u16(), refusal.http_status(), "{refusal:?}");
+            assert!(!status.is_server_error(), "{refusal:?}");
+            assert_eq!(body["code"], refusal.code());
+            assert_eq!(body["message"], refusal.message());
+        }
+    }
+
+    #[tokio::test]
+    async fn every_refusal_is_a_422_with_its_code_and_message() {
+        for refusal in [
+            PromoRefusal::NotFound,
+            PromoRefusal::Deactivated,
+            PromoRefusal::NotYetValid,
+            PromoRefusal::Expired,
+            PromoRefusal::ListingNotEligible,
+            PromoRefusal::FxRateUnavailable,
+            PromoRefusal::MinNightsNotMet,
+            PromoRefusal::StayDatesNotEligible,
+            PromoRefusal::MinValueNotMet,
+            PromoRefusal::UsageLimitReached,
+            PromoRefusal::GuestLimitReached,
+        ] {
+            let (status, body) = render(DbError::PromoRefused(refusal)).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{refusal:?}");
+            assert!(
+                !status.is_server_error(),
+                "{refusal:?} isn't a server error"
+            );
+            assert_eq!(body["code"], refusal.code());
+            assert_eq!(body["message"], refusal.message());
+        }
+    }
+
+    #[tokio::test]
+    async fn management_errors_are_409() {
+        let (status, body) = render(DbError::PromoCodeExists).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["code"], "PROMO_CODE_EXISTS");
+
+        let (status, body) = render(DbError::PromoAlreadyDeactivated).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["code"], "PROMO_ALREADY_DEACTIVATED");
+    }
+}
+
+#[cfg(test)]
+mod calendar_error_tests {
+    use super::*;
+    use actix_web::body::to_bytes;
+
+    async fn render(err: DbError) -> (StatusCode, serde_json::Value, Option<String>) {
+        let api = ApiError::Database(err);
+        let status = api.status_code();
+        let resp = api.error_response();
+        assert_eq!(
+            resp.status(),
+            status,
+            "status_code and error_response agree"
+        );
+        let retry_after = resp
+            .headers()
+            .get("Retry-After")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
+        let json = serde_json::from_slice(&bytes).expect("json body");
+        (status, json, retry_after)
+    }
+
+    #[tokio::test]
+    async fn conflict_variants_are_409_with_their_codes() {
+        for (err, code) in [
+            (DbError::CalendarFeedLimit, "CALENDAR_FEED_LIMIT"),
+            (DbError::CalendarFeedDuplicate, "CALENDAR_FEED_DUPLICATE"),
+            (
+                DbError::CalendarBlockManagedByFeed,
+                "CALENDAR_BLOCK_MANAGED_BY_FEED",
+            ),
+            (DbError::CalendarBlockDuplicate, "CALENDAR_BLOCK_DUPLICATE"),
+        ] {
+            let (status, body, retry) = render(err).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{code}");
+            assert_eq!(body["code"], code);
+            assert!(body["message"].as_str().is_some_and(|m| !m.is_empty()));
+            assert_eq!(retry, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn rate_limit_is_429_with_retry_after() {
+        let (status, body, retry) = render(DbError::CalendarSyncRateLimited {
+            retry_after_secs: 42,
+        })
+        .await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(body["code"], "CALENDAR_SYNC_RATE_LIMITED");
+        assert_eq!(body["retry_after_secs"], 42);
+        assert_eq!(retry.as_deref(), Some("42"));
+    }
+
+    #[tokio::test]
+    async fn unprocessable_is_422_with_its_code() {
+        let api = ApiError::Unprocessable {
+            code: "CALENDAR_FEED_SELF",
+            message: "no".into(),
+        };
+        assert_eq!(api.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let resp = api.error_response();
+        let bytes = to_bytes(resp.into_body()).await.expect("body");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(json["code"], "CALENDAR_FEED_SELF");
+    }
+
+    #[tokio::test]
+    async fn rate_limit_retry_after_is_at_least_one_second() {
+        let (_, _, retry) = render(DbError::CalendarSyncRateLimited {
+            retry_after_secs: 0,
+        })
+        .await;
+        assert_eq!(retry.as_deref(), Some("1"));
+    }
+}
+
+#[cfg(test)]
+mod currency_error_tests {
+    use super::*;
+    use actix_web::body::to_bytes;
+    use common::currency::ListingRef;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    async fn render(err: DbError) -> (StatusCode, serde_json::Value, Option<String>) {
+        let api = ApiError::Database(err);
+        let status = api.status_code();
+        let resp = api.error_response();
+        assert_eq!(
+            resp.status(),
+            status,
+            "status_code and error_response agree"
+        );
+        let retry_after = resp
+            .headers()
+            .get("Retry-After")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
+        let json = serde_json::from_slice(&bytes).expect("json body");
+        (status, json, retry_after)
+    }
+
+    #[tokio::test]
+    async fn currency_not_found_is_404() {
+        let (s, b, _) = render(DbError::CurrencyNotFound("XYZ".into())).await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        assert_eq!(b["code"], "CURRENCY_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn currency_unknown_on_write_is_422() {
+        let (s, b, _) = render(DbError::CurrencyUnknown("XYZ".into())).await;
+        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(b["code"], "CURRENCY_NOT_FOUND");
+        assert_eq!(b["currency"], "XYZ");
+    }
+
+    #[tokio::test]
+    async fn currency_inactive_is_422() {
+        let (s, b, _) = render(DbError::CurrencyInactive("CAD".into())).await;
+        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(b["code"], "CURRENCY_INACTIVE");
+    }
+
+    #[tokio::test]
+    async fn currency_in_use_lists_listings() {
+        let listing = ListingRef {
+            id: uuid::Uuid::nil(),
+            title: "Villa Azul".into(),
+            slug: "villa-azul".into(),
+        };
+        let (s, b, _) = render(DbError::CurrencyInUse(vec![listing])).await;
+        assert_eq!(s, StatusCode::CONFLICT);
+        assert_eq!(b["code"], "CURRENCY_IN_USE");
+        assert_eq!(b["listings"][0]["title"], "Villa Azul");
+        assert_eq!(b["listings"][0]["slug"], "villa-azul");
+    }
+
+    #[tokio::test]
+    async fn currency_exists_is_409() {
+        let (s, b, _) = render(DbError::CurrencyExists("USD".into())).await;
+        assert_eq!(s, StatusCode::CONFLICT);
+        assert_eq!(b["code"], "CURRENCY_EXISTS");
+    }
+
+    #[tokio::test]
+    async fn effective_at_in_past_is_422() {
+        let (s, b, _) = render(DbError::EffectiveAtInPast).await;
+        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(b["code"], "EFFECTIVE_AT_IN_PAST");
+    }
+
+    #[tokio::test]
+    async fn effective_at_too_far_is_422() {
+        let (s, b, _) = render(DbError::EffectiveAtTooFar).await;
+        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(b["code"], "EFFECTIVE_AT_TOO_FAR");
+    }
+
+    #[tokio::test]
+    async fn rate_already_effective_is_409() {
+        let (s, b, _) = render(DbError::RateAlreadyEffective).await;
+        assert_eq!(s, StatusCode::CONFLICT);
+        assert_eq!(b["code"], "RATE_ALREADY_EFFECTIVE");
+    }
+
+    #[tokio::test]
+    async fn rate_version_exists_is_409() {
+        let (s, b, _) = render(DbError::RateVersionExists).await;
+        assert_eq!(s, StatusCode::CONFLICT);
+        assert_eq!(b["code"], "RATE_VERSION_EXISTS");
+    }
+
+    #[tokio::test]
+    async fn confirmation_required_carries_string_decimals() {
+        let dec = |s: &str| Decimal::from_str(s).expect("decimal");
+        let (s, b, _) = render(DbError::RateChangeConfirmationRequired {
+            baseline: dec("160.000000"),
+            proposed: dec("176"),
+            deviation_pct: Some(dec("10.00")),
+        })
+        .await;
+        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(b["code"], "RATE_CHANGE_CONFIRMATION_REQUIRED");
+        assert_eq!(b["baseline_rate"], "160.000000");
+        assert_eq!(b["proposed_rate"], "176");
+        assert_eq!(b["deviation_pct"], "10.00");
+    }
+
+    #[tokio::test]
+    async fn lock_contention_is_retryable_503() {
+        let (s, b, retry) = render(DbError::LockContention("rate publish".into())).await;
+        assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(b["code"], "SERVICE_UNAVAILABLE");
+        assert_eq!(retry.as_deref(), Some("1"));
+    }
+
+    #[tokio::test]
+    async fn deadlock_and_lock_timeout_map_to_lock_contention() {
+        // Non-database errors pass through unchanged.
+        let other = DbError::from_sqlx_contended(sqlx::Error::RowNotFound, "rate publish");
+        assert!(matches!(other, DbError::Sqlx(sqlx::Error::RowNotFound)));
+        assert_eq!(
+            db_core::error::SQLSTATE_DEADLOCK_DETECTED,
+            "40P01",
+            "deadlock SQLSTATE"
+        );
+        assert_eq!(
+            db_core::error::SQLSTATE_LOCK_NOT_AVAILABLE,
+            "55P03",
+            "lock timeout SQLSTATE"
+        );
+    }
+}

@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT \n            SUM(gross_amount) AS total_gross,\n            SUM(platform_fee_amount) AS total_platform_fee,\n            SUM(tax_withheld_amount) AS total_tax_withheld,\n            SUM(net_payout_amount) AS total_net,\n            SUM(CASE WHEN status = 'paid' THEN net_payout_amount ELSE 0 END) AS total_paid,\n            SUM(CASE WHEN status = 'pending' THEN net_payout_amount ELSE 0 END) AS total_pending,\n            SUM(CASE WHEN status = 'processing' THEN net_payout_amount ELSE 0 END) AS total_processing,\n            COUNT(*) AS count_entries\n        FROM host_payout_ledger\n        WHERE ($1::uuid IS NULL OR host_id = $1)\n          AND ($2::uuid IS NULL OR listing_id = $2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total_gross",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 1,
+        "name": "total_platform_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "total_tax_withheld",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "total_net",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "total_paid",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "total_pending",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "total_processing",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "count_entries",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "f569ffe7484a8f27ae2c59451bb868c8682a1f966c158fbb5335bd43eddb8ae9"
+}

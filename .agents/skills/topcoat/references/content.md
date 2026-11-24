@@ -1,12 +1,13 @@
 Request extractors and response types for Topcoat handlers.
 
-A handler declares the request body it accepts and the response it sends through its own signature. This module holds the types that fill those two roles, from a JSON body to a multipart upload, a WebSocket connection, a stream of server-sent events, or an XML sitemap.
+A handler's parameters describe the request body it accepts. Its return type describes the response it sends. This module provides types for both roles.
 
 # Reading a request body
 
-A page or route handler can take the request context as `cx: &Cx` and, alongside it, a single request body parameter. That parameter can be any type that implements [`FromRequest`](crate::request::FromRequest). [`Json`] and [`Form`] deserialize the body into a type of your own, while [`Bytes`](crate::request::Bytes) and [`String`] hand it over unparsed and [`Body`](crate::Body) leaves it as a stream to read yourself.
+A handler must take `cx: &Cx` as its first parameter, even when unused. An optional second parameter implements [`FromRequest`](crate::request::FromRequest). For example, [`Json`] deserializes a JSON body into your type.
 
 ```rust
+// src/app/api/users.rs
 # #[derive(serde::Deserialize)] struct CreateUser { name: String }
 use topcoat::{
     Result,
@@ -14,26 +15,28 @@ use topcoat::{
     router::{content::Json, route},
 };
 
-#[route(POST "/api/users")]
+#[route(POST)]
 async fn create_user(cx: &Cx, Json(input): Json<CreateUser>) -> Result<String> {
     let _ = cx;
     Ok(format!("created {}", input.name))
 }
 ```
 
-The context and the body parameter are both optional and may appear in either order, but there can be at most one body parameter, because the body is a stream that can only be consumed once. A body an extractor cannot parse is rejected with `400 Bad Request`; wrap the extractor in [`Option`] to accept a request that carries no body at all. Pages read bodies the same way, but render a view instead of returning a response value.
+There can be only one body parameter because the body can be consumed only once. Built-in extractors reject malformed input with `400 Bad Request`. Wrap an extractor in [`Option`] to accept an absent body. Pages read bodies the same way and return a view.
 
 # The body limit
 
-Extractors that buffer the body read at most the request's body limit and reject a larger body with `413 Content Too Large`, so a client cannot exhaust the server's memory. The limit defaults to 2 MiB; register the [`BodyLimit`](crate::BodyLimit) layer to change it, for the whole application or for the routes under a path:
+Extractors that buffer the body reject requests above the body limit with `413 Content Too Large`. The default is 2 MiB. The limit is read from the request context. Pass a [`BodyLimit`](crate::BodyLimit) to [`RouterBuilder::with`](crate::RouterBuilder::with) to change it for the whole application, or to `with(...)` on a route, page, layout, or layer to change it for that part of the application.
 
-```rust,no_run
-use topcoat::router::{BodyLimit, Router};
+```rust
+# use topcoat::{Result, context::Cx, router::{BodyLimit, Router, request::Bytes, route}};
+// Allow up to 32 MiB for this route, keep the 2 MiB default elsewhere.
+#[route(POST "/upload", with(BodyLimit::max(32 * 1024 * 1024)))]
+async fn upload(cx: &Cx, bytes: Bytes) -> Result<()> {
+    Ok(())
+}
 
-let router = Router::builder()
-    // Allow up to 32 MiB under /upload, keep the 2 MiB default elsewhere.
-    .layer(BodyLimit::max(32 * 1024 * 1024).at("/upload"))
-    .build();
+let router = Router::builder().route(upload).build();
 ```
 
 Taking [`Body`](crate::Body) directly is not limited, because the handler streams the body instead of buffering it.
@@ -42,19 +45,21 @@ Implement [`FromRequest`](crate::request::FromRequest) yourself for request pars
 
 # Returning a response
 
-A route returns `Result<T>` for any `T` that implements [`IntoResponse`](crate::response::IntoResponse). The same wrappers work in return position, where they serialize the value and set the matching `Content-Type`; a string or byte buffer becomes the body as is.
+A route returns `Result<T>`. Implement [`IntoResponse`](crate::response::IntoResponse) for a synchronous conversion, or [`AsyncIntoResponse`](crate::response::AsyncIntoResponse) if building the response needs to await work. A wrapper such as [`Json`] serializes its value and sets the content type. A string or byte buffer becomes the response body directly.
 
 A tuple builds a response from several parts. The last element is the body, a leading [`StatusCode`](crate::StatusCode) sets the status, and the elements in between attach headers or extensions:
 
 ```rust
+// src/app/api/users.rs
 # #[derive(serde::Serialize)] struct User { name: String }
 use topcoat::{
     Result,
+    context::Cx,
     router::{StatusCode, content::Json, route},
 };
 
-#[route(POST "/api/users")]
-async fn create_user() -> Result<(StatusCode, Json<User>)> {
+#[route(POST)]
+async fn create_user(cx: &Cx) -> Result<(StatusCode, Json<User>)> {
     let user = User {
         name: "Ada".to_string(),
     };
@@ -62,7 +67,7 @@ async fn create_user() -> Result<(StatusCode, Json<User>)> {
 }
 ```
 
-[`Js`] and [`Wasm`] are response-only wrappers for the two media types a browser checks rather than guesses: it refuses to execute a `<script type="module">` that does not arrive as JavaScript, and `WebAssembly.compileStreaming` rejects anything that is not exactly `application/wasm`. Reach for them when a route serves a script or a module by hand rather than through the asset bundle.
+Use [`Js`] or [`Wasm`] when serving JavaScript or WebAssembly bytes directly from a route. They set the content types required by browser module loaders.
 
 Implement [`IntoResponse`](crate::response::IntoResponse) yourself for a type that should control its own status, headers, and body. A page sets its status and headers from inside the `view!` body instead; see the `view!` macro docs.
 

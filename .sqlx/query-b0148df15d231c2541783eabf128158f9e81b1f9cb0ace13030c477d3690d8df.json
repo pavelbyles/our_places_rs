@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT l.name\n        FROM listing_staff ls\n        INNER JOIN listing l ON l.id = ls.listing_id\n        WHERE ls.staff_user_id = $1\n          AND l.deleted_at IS NULL\n          AND ($2 OR l.user_id = $3)\n        ORDER BY l.name ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b0148df15d231c2541783eabf128158f9e81b1f9cb0ace13030c477d3690d8df"
+}

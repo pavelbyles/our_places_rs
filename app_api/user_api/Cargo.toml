@@ -24,8 +24,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 tracing-actix-web.workspace = true
 tracing-log.workspace = true
-bcrypt = "0.19.0"
-rand = "0.10.1"
+bcrypt = { workspace = true }
+rand = { workspace = true }
 
 db_core.workspace = true
 api_core.workspace = true

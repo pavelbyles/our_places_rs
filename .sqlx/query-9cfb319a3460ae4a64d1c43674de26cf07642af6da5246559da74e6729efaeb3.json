@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, conversation_id, listing_id, guest_id, date_from, date_to,\n            number_of_persons, currency, status AS \"status: EnquiryStatus\",\n            closed_reason AS \"closed_reason: EnquiryClosedReason\", first_response_at,\n            created_at, updated_at\n        FROM booking_enquiry WHERE guest_id = $1\n        ORDER BY created_at DESC LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "conversation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "status: EnquiryStatus",
+        "type_info": {
+          "Custom": {
+            "name": "enquiry_status",
+            "kind": {
+              "Enum": [
+                "open",
+                "closed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "closed_reason: EnquiryClosedReason",
+        "type_info": {
+          "Custom": {
+            "name": "enquiry_closed_reason",
+            "kind": {
+              "Enum": [
+                "request_submitted",
+                "quoted",
+                "closed_by_host",
+                "booked",
+                "expired",
+                "superseded"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "first_response_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "9cfb319a3460ae4a64d1c43674de26cf07642af6da5246559da74e6729efaeb3"
+}

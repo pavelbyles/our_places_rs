@@ -1,0 +1,130 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id, c.listing_id, c.feed_id, c.feed_name, c.block_id, c.booking_id,\n            b.confirmation_code, b.date_from AS booking_date_from, b.date_to AS booking_date_to,\n            c.kind AS \"kind!: ConflictKind\",\n            c.block_date_from, c.block_date_to, c.detected_at, c.reopened_at,\n            c.acknowledged_at, c.acknowledged_by, NULL::text AS stale_reason\n        FROM calendar_conflict c\n        JOIN booking b ON b.id = c.booking_id\n        WHERE c.listing_id = $1 AND c.acknowledged_at IS NOT NULL\n        ORDER BY c.acknowledged_at DESC, c.id\n        LIMIT $2 OFFSET $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "feed_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "feed_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "block_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "confirmation_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "booking_date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "booking_date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "kind!: ConflictKind",
+        "type_info": {
+          "Custom": {
+            "name": "calendar_conflict_kind",
+            "kind": {
+              "Enum": [
+                "overlap",
+                "turnover"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "block_date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 11,
+        "name": "block_date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 12,
+        "name": "detected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "reopened_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "acknowledged_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "acknowledged_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 16,
+        "name": "stale_reason",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "7de5b647320abf3f2102560866c6404823f2adf716cf8889bc760681e0a83fe2"
+}

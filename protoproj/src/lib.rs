@@ -1,3 +1,5 @@
+//! gRPC prototype of the listing service.
+/// Code generated from `proto/listing.proto`.
 pub mod listing {
     tonic::include_proto!("listing"); // The string must match `package listing;` in your proto
 }

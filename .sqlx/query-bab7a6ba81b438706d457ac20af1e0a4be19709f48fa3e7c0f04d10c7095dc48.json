@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE booking_request_quote SET superseded_at = $2\n         WHERE request_id = $1 AND superseded_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bab7a6ba81b438706d457ac20af1e0a4be19709f48fa3e7c0f04d10c7095dc48"
+}

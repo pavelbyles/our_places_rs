@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (\n            EXISTS (\n                SELECT 1 FROM booking b\n                WHERE b.listing_id = $1\n                  AND (b.status = 'confirmed'\n                       OR (b.status = 'pending' AND b.expires_at > NOW() AND b.guest_id <> $2))\n                  AND b.date_from - $5::int4 < $4\n                  AND b.date_to + $5::int4 > $3\n            )\n            OR EXISTS (\n                SELECT 1 FROM booking_request r\n                WHERE r.listing_id = $1\n                  AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()\n                  AND r.id IS DISTINCT FROM $6\n                  AND r.date_from - $5::int4 < $4\n                  AND r.date_to + $5::int4 > $3\n            )\n        ) AS \"blocked!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blocked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "025a5899e17a6e8ed304cab96622885cab548f73a945b33c4782d626bdc259c1"
+}

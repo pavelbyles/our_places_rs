@@ -1,0 +1,188 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, conversation_id, listing_id, guest_id, enquiry_id,\n            origin AS \"origin: RequestOrigin\", status AS \"status: RequestStatus\",\n            date_from, date_to, number_of_persons, currency,\n            price_snapshot AS \"price_snapshot: Json<StayPriceSnapshot>\",\n            metadata AS \"metadata: Json<BookingMetadata>\",\n            promo_code_id, current_quote_id, expires_at, first_response_at,\n            decline_reason AS \"decline_reason: DeclineReason\", decline_note, booking_id,\n            created_at, updated_at\n        FROM booking_request\n        WHERE guest_id = $1\n        ORDER BY created_at DESC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "conversation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "enquiry_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "origin: RequestOrigin",
+        "type_info": {
+          "Custom": {
+            "name": "booking_request_origin",
+            "kind": {
+              "Enum": [
+                "guest_request",
+                "enquiry_quote"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "status: RequestStatus",
+        "type_info": {
+          "Custom": {
+            "name": "booking_request_status",
+            "kind": {
+              "Enum": [
+                "open",
+                "accepted",
+                "quoted",
+                "declined",
+                "expired",
+                "withdrawn",
+                "cancelled",
+                "converted"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "price_snapshot: Json<StayPriceSnapshot>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "metadata: Json<BookingMetadata>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 13,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 14,
+        "name": "current_quote_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 15,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "first_response_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "decline_reason: DeclineReason",
+        "type_info": {
+          "Custom": {
+            "name": "decline_reason",
+            "kind": {
+              "Enum": [
+                "dates_unavailable",
+                "group_size",
+                "stay_length",
+                "event_not_permitted",
+                "other"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "decline_note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 20,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 21,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f2abdb2b20e154ff7b86d6504bebfccb655db93626bbbd5f489f1b1ec6cf46e1"
+}

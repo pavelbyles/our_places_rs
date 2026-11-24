@@ -13,33 +13,39 @@ env:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    # Long-lived environments are never torn down: merging dev -> main through
+    # a PR closes a PR whose head is `dev`.
+    if: >-
+      (github.event_name == 'delete' && github.event.ref_type == 'branch' && !contains(fromJSON('["main","dev"]'), github.event.ref)) ||
+      (github.event_name == 'pull_request' && !contains(fromJSON('["main","dev"]'), github.head_ref))
     permissions:
       contents: "read"
       id-token: "write"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v3"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Determine Target
         id: target
         env:
+          EVENT_NAME: ${{ github.event_name }}
           DELETE_REF: ${{ github.event.ref }}
           BRANCH_NAME: ${{ github.head_ref }}
         run: |
-          if [[ "${{ github.event_name }}" == "delete" ]]; then
-            REF_NAME="${{ env.DELETE_REF }}"
+          if [[ "$EVENT_NAME" == "delete" ]]; then
+            REF_NAME="$DELETE_REF"
           else
-            REF_NAME="${{ env.BRANCH_NAME }}"
+            REF_NAME="$BRANCH_NAME"
           fi
 
           # Same sanitization logic as CI/CD
@@ -55,13 +61,20 @@ jobs:
           echo "Target Schema: $SAFE_SCHEMA_name"
 
       - name: Delete Cloud Run Services
+        env:
+          SERVICE_SUFFIX: ${{ steps.target.outputs.SERVICE_SUFFIX }}
+          REGION: ${{ env.REGION }}
         run: |
-          SUFFIX="${{ steps.target.outputs.SERVICE_SUFFIX }}"
+          SUFFIX="$SERVICE_SUFFIX"
           SERVICES=(
             "booking-api-$SUFFIX"
             "listing-api-$SUFFIX"
             "user-api-$SUFFIX"
             "our-places-image-worker-$SUFFIX"
+            "our-places-email-worker-$SUFFIX"
+            "our-places-web-ui-guest-$SUFFIX"
+            "our-places-web-ui-admin-$SUFFIX"
+            # Retired portals, still deleted for branches deployed before the switch
             "our-places-web-app-tc-$SUFFIX"
             "our-places-web-app-admin-tc-$SUFFIX"
           )
@@ -69,27 +82,40 @@ jobs:
           for SERVICE in "${SERVICES[@]}"; do
             echo "Attempting to delete service: $SERVICE"
             # Use || true to prevent failure if service doesn't exist
-            gcloud run services delete $SERVICE --region ${{ env.REGION }} --quiet || echo "Service $SERVICE not found or already deleted."
+            gcloud run services delete "$SERVICE" --region "$REGION" --quiet || echo "Service $SERVICE not found or already deleted."
           done
 
-      - name: Delete GCS Buckets
+      - name: Delete Calendar Sync Job
+        env:
+          SERVICE_SUFFIX: ${{ steps.target.outputs.SERVICE_SUFFIX }}
+          REGION: ${{ env.REGION }}
         run: |
-          SUFFIX="${{ steps.target.outputs.SERVICE_SUFFIX }}"
+          gcloud run jobs delete "calendar-sync-$SERVICE_SUFFIX" --region "$REGION" --quiet || echo "Job calendar-sync-$SERVICE_SUFFIX not found or already deleted."
+
+      - name: Delete GCS Buckets
+        env:
+          SERVICE_SUFFIX: ${{ steps.target.outputs.SERVICE_SUFFIX }}
+        run: |
+          SUFFIX="$SERVICE_SUFFIX"
 
           echo "Attempting to delete raw image bucket..."
-          gcloud storage rm --recursive gs://our-places-gcs-img-raw-$SUFFIX || echo "Bucket not found."
+          gcloud storage rm --recursive "gs://our-places-gcs-img-raw-$SUFFIX" || echo "Bucket not found."
 
           echo "Attempting to delete public image bucket..."
-          gcloud storage rm --recursive gs://our-places-gcs-img-public-$SUFFIX || echo "Bucket not found."
+          gcloud storage rm --recursive "gs://our-places-gcs-img-public-$SUFFIX" || echo "Bucket not found."
 
       - name: Delete PubSub Topic and Subscription
+        env:
+          SERVICE_SUFFIX: ${{ steps.target.outputs.SERVICE_SUFFIX }}
         run: |
-          SUFFIX="${{ steps.target.outputs.SERVICE_SUFFIX }}"
+          SUFFIX="$SERVICE_SUFFIX"
           echo "Attempting to delete PubSub subscription..."
-          gcloud pubsub subscriptions delete our-places-image-worker-sub-$SUFFIX || echo "Subscription not found."
+          gcloud pubsub subscriptions delete "our-places-image-worker-sub-$SUFFIX" || echo "Subscription not found."
+          gcloud pubsub subscriptions delete "our-places-email-worker-sub-$SUFFIX" || echo "Email subscription not found."
 
           echo "Attempting to delete PubSub topic..."
-          gcloud pubsub topics delete our-places-image-uploads-raw-$SUFFIX || echo "Topic not found."
+          gcloud pubsub topics delete "our-places-image-uploads-raw-$SUFFIX" || echo "Topic not found."
+          gcloud pubsub topics delete "our-places-email-notifications-$SUFFIX" || echo "Email topic not found."
 
       - name: Delete Database Schema
         env:

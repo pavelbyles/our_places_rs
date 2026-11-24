@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE booking_enquiry\n        SET status = 'closed', closed_reason = 'booked', updated_at = NOW()\n        WHERE listing_id = $1 AND guest_id = $2 AND status = 'open'\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d2713dcbda1ebb0f7b8f341d5fa81eefbd80c3f009540a81866dfc6929675b7b"
+}

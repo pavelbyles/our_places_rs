@@ -1,159 +1,156 @@
-[`Cx`] is Topcoat's request context. Pages, layouts, components, and routes can take it as an optional parameter when they need request-scoped information.
+[`Cx`] holds the values your code needs while handling a request. These include HTTP request data, shared application values such as a database connection, and values added for part of the request.
 
-Add `cx: &Cx` to the function signature when needed; leave it out when the function does not need request context. Topcoat passes it automatically when the parameter is present.
+Topcoat's handler and component macros require `cx: &Cx` as the first parameter, even when unused. Topcoat supplies the context when it calls these functions.
 
-# Router request helpers
+Ordinary helper functions can take a `cx: &Cx` parameter when they need context values. Pass `cx` explicitly when calling them. Functions annotated with [`#[memoize]`](macro@memoize) require `cx: &Cx` first too, and callers pass it explicitly.
 
-The [`router::request`](crate::router::request) module exposes small functions for reading HTTP request data from `cx`.
+# Reading values
+
+A context holds values by their Rust type. Use [`context::<T>(cx)`](fn@context) to borrow the value of type `T`. It panics if the context has none. When a value may be missing, use [`try_context`] to get an `Option`:
 
 ```rust
+use topcoat::context::{Cx, context, try_context};
+
+struct Database;
+struct Customer;
+
+fn db(cx: &Cx) -> &Database {
+    context(cx)
+}
+
+fn current_customer(cx: &Cx) -> Option<&Customer> {
+    try_context(cx)
+}
+```
+
+Use the exact type you added. If you added an `Arc<Database>`, ask for `Arc<Database>`, not `Database`.
+
+Small helpers such as `db(cx)` and `current_customer(cx)` give these reads clear names. They also keep the choice of stored type and the handling of missing values in one place. Topcoat's own values come with helpers like these, such as [`headers(cx)`](crate::router::request::headers) for request data. See [`router::request`](crate::router::request) and the documentation of each feature.
+
+A context can hold several values of one type, because a new value [shadows](#adding-values) older ones instead of removing them. `context` returns the closest one. [`iter_context`] visits every value of the type, starting with the closest one and walking back through the values it shadows. This suits types that several scopes add to, such as breadcrumbs:
+
+```rust
+use topcoat::context::{Cx, iter_context};
+
+struct Crumb(&'static str);
+
+fn trail(cx: &Cx) -> String {
+    let mut crumbs: Vec<_> = iter_context::<Crumb>(cx).map(|crumb| crumb.0).collect();
+    crumbs.reverse();
+    crumbs.join(" / ")
+}
+
+let cx = Cx::new().with(Crumb("Home"));
+let posts = cx.with(Crumb("Posts"));
+
+assert_eq!(trail(&posts), "Home / Posts");
+assert_eq!(trail(&cx), "Home");
+```
+
+# Adding values
+
+[`Cx::with`] creates a child context with a new value. The child can read the new value and every value of its parent. The parent stays unchanged, so only code given the child sees the new value.
+
+Adding a value never removes one. When the context already has a value of the same type, the new value shadows it. Reads return the new value, and the old one stays underneath. This lets code change a default for the code it calls. For example, [`UrlForm`] controls whether URLs are relative to the site root or absolute. The default is relative. Shadow it with `UrlForm::Absolute` for content such as an email body:
+
+```rust
+use topcoat::context::{Cx, UrlForm, url_form};
+
+fn email_context(cx: &Cx) -> Cx {
+    cx.with(UrlForm::Absolute)
+}
+
+let cx = Cx::new();
+assert_eq!(url_form(&cx), UrlForm::Relative);
+assert_eq!(url_form(&email_context(&cx)), UrlForm::Absolute);
+```
+
+To use a child context in a view, shadow the surrounding binding with `let cx = cx.with(value);` before `view!`. The view captures that binding, and components called inside it receive the child context. See the [`view!` context guide](../view/macro.view.html#request-context) for an example.
+
+A [layer](crate::router#layers) can add values for the rest of the request by passing a child context to [`next.run`](crate::router::Next::run). For data that code can load when it needs it, such as the current user, prefer [helper functions](#functions-not-middlewares).
+
+To add several values at once, pass a tuple to [`Cx::with_many`]. The result is the same as calling `with` for each value, but it creates one child context instead of one per value, so it is more efficient.
+
+# Sharing values across requests
+
+Use [`with`](crate::router::RouterBuilder::with) on the router builder for values that every request should see, such as configuration or a database pool. Requests borrow the same value rather than receiving a copy, so `Clone` is not required. The value must be `Send + Sync + 'static`. To let requests update shared state, store a value that supports changes through a shared reference, such as an atomic or a [`Mutex`](std::sync::Mutex):
+
+```rust
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use topcoat::{
-    context::Cx,
-    router::request::{headers, method, uri},
+    context::{Cx, context},
+    router::Router,
 };
 
-fn request_summary(cx: &Cx) -> String {
-    let user_agent = headers(cx)
-        .get("user-agent")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("unknown");
+struct PageViews(AtomicU64);
 
-    format!("{} {} from {user_agent}", method(cx), uri(cx).path())
+fn router() -> Router {
+    Router::builder().with(PageViews(AtomicU64::new(0))).build()
+}
+
+fn count_view(cx: &Cx) -> u64 {
+    context::<PageViews>(cx).0.fetch_add(1, Ordering::Relaxed) + 1
 }
 ```
 
-The ones you reach for most, all listed in [`topcoat::router::request`](crate::router::request):
+Without a router, put the shared values in a [`ContextMap`], wrap it in an `Arc`, and attach it to a fresh context with `Cx::new().with_shared(shared)` for each render. See [`Cx::with_shared`]. For tests, start with an empty `Cx::new()` and add the values the test needs with [`Cx::with`].
 
-- [`parts(cx)`](crate::router::request::parts) returns the current request's `http::request::Parts`.
-- [`method(cx)`](crate::router::request::method) returns the HTTP method.
-- [`uri(cx)`](crate::router::request::uri) returns the request URI.
-- [`version(cx)`](crate::router::request::version) returns the HTTP version.
-- [`headers(cx)`](crate::router::request::headers) returns the request headers.
-- [`content_type(cx)`](crate::router::request::content_type) returns the request `Content-Type`.
-- [`extensions(cx)`](crate::router::request::extensions) returns request extensions.
+# Route context
 
-Use [`parts(cx)`](crate::router::request::parts) when you need several fields at once:
+Use route context to declare metadata that layers and layouts can read before the handler runs. Add it with `with(...)` on a [`#[route]`](macro@crate::router::route), [`#[page]`](crate::router::page), [`#[layout]`](crate::router::layout), or [`#[layer]`](crate::router::layer). The router puts these values in the request context as soon as it selects the route.
 
-```rust
-use topcoat::{context::Cx, router::request::parts};
-
-fn cache_key(cx: &Cx) -> String {
-    let parts = parts(cx);
-    format!("{}:{}", parts.method, parts.uri)
-}
-```
-
-Use [`extensions(cx)`](crate::router::request::extensions) for typed request values attached by a lower-level request layer or service integration:
-
-```rust
-use topcoat::{context::Cx, router::request::extensions};
-
-struct RequestId(String);
-
-fn request_id(cx: &Cx) -> Option<&str> {
-    extensions(cx).get::<RequestId>().map(|id| id.0.as_str())
-}
-```
-
-# Path and query helpers
-
-The [`path_param!`](macro@crate::router::path_param) macro and [`#[query_params]`](macro@crate::router::query_params) attribute declare typed values that you read with the [`path_param::<T>(cx)`](fn@crate::router::path_param) and [`query_params::<T>(cx)`](fn@crate::router::query_params) functions. Topcoat parses typed path parameters and query structs lazily and memoizes them for the request.
+For example, a layout can set a default title, and a page can replace it with its own:
 
 ```rust
 use topcoat::{
     Result,
-    context::Cx,
-    router::{page, path_param, query_params},
-    view::view,
+    context::{Cx, context},
+    router::{Router, Slot, layout, page},
+    view::{View, view},
 };
 
-path_param!(post_id: uuid::Uuid, error = bad_request);
+struct Title(&'static str);
 
-#[query_params(error = bad_request)]
-struct PostQuery {
-    preview: Option<bool>,
+#[layout("/", with(Title("My shop")))]
+async fn shell(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
+    let Title(title) = context::<Title>(cx);
+
+    Ok(view! {
+        <!DOCTYPE html>
+        <html>
+            <head><title>(title)</title></head>
+            <body>(slot)</body>
+        </html>
+    })
 }
 
-#[page("/posts/{post_id}")]
-async fn post(cx: &Cx) -> Result {
-    let post_id = path_param::<PostId>(cx)?;
-    let query = query_params::<PostQuery>(cx)?;
-
-    view! {
-        <article data-preview=(query.preview.unwrap_or(false))>
-            "post id: " (post_id.to_string())
-        </article>
-    }
+#[page("/products", with(Title("Products")))]
+async fn products(cx: &Cx) -> Result<impl View> {
+    Ok(view! { <h1>"Products"</h1> })
 }
+
+let router = Router::builder().layout(shell).page(products).build();
 ```
 
-Any function with `&Cx` can read these values.
+This example uses a custom `Title` to show how route context works. For page titles and other page metadata, use the built-in [`metadata`](crate::metadata) module, which combines values from layouts and pages and renders their HTML tags.
 
-# App and request context helpers
+Router builder values are added first, followed by route context, then values added during the request with `cx.with(...)`. Each value shadows earlier values of the same type. Route context follows the way handlers nest: first the values of the layers that wrap the route, from outermost to innermost, then those of its layouts in the same order, and the route's or page's own values last. Repeat `with(...)` to add several values. A request that matches no route has no route context, even inside a layer without a path.
 
-This module exposes typed context accessors:
+Shadowed values remain available through [`iter_context`], which visits the closest value first. This lets pages and layouts contribute metadata that an outer layout collects and renders together. For breadcrumbs, each layout and page could declare a `Crumb` value. The outer layout collects them with `iter_context::<Crumb>(cx)` and reverses the order to render the trail from root to page.
 
-- [`app_context::<T>(cx)`](app_context) reads a required value registered on the router with `.app_context(value)`.
-- [`try_app_context::<T>(cx)`](try_app_context) reads an optional value registered on the router.
-- [`request_context::<T>(cx)`](request_context) reads a required typed value attached to the current request.
-- [`try_request_context::<T>(cx)`](try_request_context) reads an optional typed value attached to the current request.
-
-```rust
-use topcoat::context::{Cx, app_context};
-#
-# struct Database;
-
-fn db(cx: &Cx) -> &Database {
-    app_context::<Database>(cx)
-}
-```
-
-Values are keyed by Rust type. The required helpers panic when the requested type was not registered, so they are best wrapped in small application-specific functions like `db(cx)`, `config(cx)`, or `current_tenant(cx)`.
-
-Use the `try_` helpers when a value is intentionally optional on some requests:
-
-```rust
-use topcoat::context::{Cx, try_request_context};
-#
-# struct Customer;
-
-fn current_customer(cx: &Cx) -> Option<&Customer> {
-    try_request_context(cx)
-}
-```
-
-# Registering request context
-
-Request context is registered by scoping: [`Cx::with`] returns a child `Cx` whose request context also holds the given value, and [`Cx::with_many`] registers a tuple of values in one step. The child inherits every other value and shares the rest of the request state, such as the app context and the memoize cache, with its parent.
-
-```rust
-use topcoat::context::{Cx, request_context};
-
-struct Customer {
-    name: String,
-}
-
-fn greet(cx: &Cx) -> String {
-    let cx = cx.with(Customer {
-        name: "Ada".to_owned(),
-    });
-
-    let customer: &Customer = request_context(&cx);
-    format!("Hello, {}", customer.name)
-}
-```
-
-Registering a type that is already present shadows it for the child scope: lookups through the child see the new value, while lookups through the parent still see the original. This is how router layers make values like the cookie jar available to everything below them; they derive a child context and pass it to the rest of the chain.
+Route context is built once, when the router is built. For a value that depends on the request, such as a crumb showing a customer's name, store a function as a [`BoxCxFn`] and call it while rendering. Calls are not memoized, so load data through [`#[memoize]`](macro@memoize) functions the page uses too.
 
 # Work that outlives the handler
 
-A [`Cx`] is a handle to state shared by everything serving one request. The router drops its own handle once the response is sent, so a streaming response body or a spawned task cannot borrow the `cx` the handler was called with. Clone the `Cx` and move the owned handle into the work instead; it reads the same app and request context.
+A stream or spawned task may keep running after its handler returns. It cannot keep borrowing the handler's `cx`. Clone the [`Cx`] and move that clone into the stream or task. The clone keeps the request state alive and reads the same values:
 
 ```rust
+// src/app/orders.rs
 # async fn record(name: &str) {}
 use topcoat::{
     Result,
-    context::{Cx, request_context},
+    context::{Cx, context},
     router::route,
 };
 
@@ -161,44 +158,95 @@ struct Customer {
     name: String,
 }
 
-#[route(POST "/orders")]
+#[route(POST)]
 async fn place_order(cx: &Cx) -> Result<&'static str> {
     let cx = cx.clone();
     tokio::spawn(async move {
-        let customer: &Customer = request_context(&cx);
+        let customer: &Customer = context(&cx);
         record(&customer.name).await;
     });
     Ok("queued")
 }
 ```
 
-A cloned handle keeps reading the context after the response was sent, but it can no longer change what the client receives. Cookie changes and other response-directed writes made from work that outlives the handler are dropped.
+The clone remains usable after the handler returns, but it cannot change headers already sent to the client. Writing cookies after the jar is sealed panics.
 
-# Memoization
+# Functions, not middlewares
 
-[`#[memoize]`](macro@memoize) caches a `cx`-taking function's result for the duration of a request, keyed by its arguments. Wrap the request helpers above with it so that repeated calls (across a layout, a page, and nested components) run the work once and share the result. A memoized body that reads request context keeps a result per set of values it observed, so a cached value never leaks out of the scope it was computed in. See its documentation for the details.
+Put request logic in small functions that take `cx: &Cx` and call one another. A helper can read request data, load the current user, or check whether that user is allowed to continue. Call it from the page, layout, or component that needs the result. Add [`#[memoize]`](macro@memoize) when several callers should share expensive work. It caches the result for the request and reuses it while the function would still find the same context values:
 
-# Composing helpers
+```rust
+use topcoat::{
+    context::{context, memoize, Cx},
+    router::{error::{RouterErrorExt, UnauthorizedError}, request::headers},
+    Result,
+};
 
-Any helper can accept `cx: &`[`Cx`], call other helpers, and return a domain-specific result:
+# #[derive(Clone)] struct Db;
+# struct User;
+# struct FetchBuilder;
+# impl User { fn fetch_by_id(_: &str) -> FetchBuilder { FetchBuilder } }
+# impl FetchBuilder { async fn exec(self, _: Db) -> Option<User> { None } }
+#
+/// Clones the database handle stored in the context.
+fn db(cx: &Cx) -> Db {
+    context::<Db>(cx).clone()
+}
+
+/// Loads a user by ID and caches the result for this request.
+#[memoize(as_ref)]
+async fn fetch_user(cx: &Cx, user_id: &str) -> Option<User> {
+    User::fetch_by_id(user_id).exec(db(cx)).await
+}
+
+/// Finds the session cookie in the request.
+fn session_cookie(cx: &Cx) -> Option<&str> {
+    let headers = headers(cx);
+    // ... extract session cookie from HTTP headers
+    None
+}
+
+/// Looks up the user named by the session, if present.
+async fn fetch_current_user(cx: &Cx) -> Option<&User> {
+    let user_id = session_cookie(cx)?;
+    fetch_user(cx, user_id).await
+}
+
+/// Returns the user, or an unauthorized error if there is none.
+async fn require_auth(cx: &Cx) -> Result<&User, UnauthorizedError> {
+    fetch_current_user(cx).await.ok_or_unauthorized()
+}
+```
+
+`#[memoize(as_ref)]` stores the `Option<User>` for the request and gives callers an `Option<&User>`. Helpers can borrow the user without cloning it or passing ownership from one component to the next.
+
+A component that needs an authenticated user calls `require_auth(cx)` itself:
 
 ```rust
 use topcoat::{
     context::Cx,
-    router::request::{headers, uri},
+    view::{View, component, view},
+    Result,
 };
 
-fn locale(cx: &Cx) -> &str {
-    headers(cx)
-        .get("accept-language")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
-        .unwrap_or("en")
-}
+# use topcoat::router::error::UnauthorizedError;
+# struct User { avatar_url: &'static str, name: &'static str }
+# async fn require_auth(_: &Cx) -> Result<&User, UnauthorizedError> { Err(topcoat::router::error::unauthorized()) }
+#
+/// Checks authentication and renders the user's avatar.
+#[component]
+async fn user_avatar(cx: &Cx) -> Result<impl View> {
+    let user = require_auth(cx).await?;
 
-fn canonical_url(cx: &Cx) -> String {
-    format!("https://example.com{}", uri(cx).path())
+    Ok(view! {
+        <img
+            src=(user.avatar_url)
+            alt=(format!("{}'s avatar", user.name))
+        >
+    })
 }
 ```
 
-That keeps pages, layouts, components, and routes focused on rendering or responding while shared request reads stay in ordinary Rust functions.
+Every render of `user_avatar` checks authentication, and calls for the same user share one database lookup. Each caller asks for the user without knowing whether another caller has already loaded it.
+
+Compare this with authentication middleware, which stores the user on the request so the page can assume the check already ran. If the middleware is missing or runs in the wrong order, the page panics or skips the check. An extractor such as `Auth(user)` puts the requirement in the handler's signature, but the handler then has to pass the user down through components that may never use it. With a helper, the code that needs the user asks for it.

@@ -12,7 +12,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
 
-#[tracing::instrument]
+/// What a review token is for, and whether it still works.
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/reviews/token/{token}",
@@ -86,6 +87,7 @@ pub async fn get_review_token_info(
     ))
 }
 
+/// Submits a review with a review token.
 #[tracing::instrument(skip(payload))]
 #[utoipa::path(
     post,
@@ -135,6 +137,7 @@ pub async fn submit_review(
     ))
 }
 
+/// Saves the host's reply to a review.
 #[tracing::instrument(skip(payload))]
 #[utoipa::path(
     post,
@@ -179,10 +182,13 @@ pub async fn submit_host_reply(
     ))
 }
 
+/// Query parameters of the review list.
 #[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
 pub struct ReviewsQueryParams {
+    /// Page number, starting at 1.
     #[serde(default = "default_page")]
     pub page: i64,
+    /// Reviews per page.
     #[serde(default = "default_per_page")]
     pub per_page: i64,
 }
@@ -194,7 +200,8 @@ fn default_per_page() -> i64 {
     20
 }
 
-#[tracing::instrument]
+/// A page of a listing's reviews.
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}/reviews",
@@ -229,7 +236,8 @@ pub async fn get_listing_reviews_handler(
     ))
 }
 
-#[tracing::instrument]
+/// Whether a booking's guest can review it, and the token if so.
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/reviews/booking/{booking_id}/token",
@@ -280,6 +288,7 @@ pub async fn get_booking_review_token(
     ))
 }
 
+/// Registers the review routes.
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1/reviews")

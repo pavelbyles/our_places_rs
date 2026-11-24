@@ -5,59 +5,227 @@ use serde::Deserialize;
 use std::fmt;
 
 // Overarching settings model
+/// A service's configuration.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
+    /// Where the service listens.
     pub server: Server,
+    /// Database connection.
     pub database: DatabaseSettings,
+    /// Logging.
     pub log: Log,
+    /// Environment it runs in.
     pub env: Env,
+    /// Application behaviour.
     pub application: Application,
+    /// Feature switches.
     pub feature_flags: FeatureFlags,
 }
 
 // Feature flags model
+/// Feature switches.
 #[derive(Debug, Deserialize, Clone)]
 pub struct FeatureFlags {
+    /// Whether listings can be permanently deleted.
     pub enable_hard_deletes: bool,
 }
 
+/// How long a `pending` booking holds its dates when no setting is given.
+pub const DEFAULT_PENDING_HOLD_MINUTES: i32 = 120;
+
 // Application settings model
+/// Application behaviour settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Application {
+    /// Attempts allowed when generating a booking's confirmation code.
     pub max_attempts: u32,
+    /// How long a new `pending` booking holds its dates, in minutes. Set via
+    /// `[application] pending_hold_minutes` or `EA__APPLICATION__PENDING_HOLD_MINUTES`.
+    #[serde(default = "default_pending_hold_minutes")]
+    pub pending_hold_minutes: i32,
+    /// Grace window, in seconds, within which an exchange rate submitted as
+    /// "effective now" is not treated as backdated. Set via
+    /// `[application] rate_effective_grace_seconds` or
+    /// `EA__APPLICATION__RATE_EFFECTIVE_GRACE_SECONDS`; must be 1-300.
+    #[serde(default = "default_rate_effective_grace_seconds")]
+    pub rate_effective_grace_seconds: i64,
+    /// Longest stay a quote or hold accepts, in nights. It only stops absurd
+    /// date ranges: pricing loops per night, on a public endpoint. Set via
+    /// `[application] max_stay_nights` or `EA__APPLICATION__MAX_STAY_NIGHTS`.
+    #[serde(default = "default_max_stay_nights")]
+    pub max_stay_nights: i64,
+    /// How long a host has to answer a request to book, in hours, before it
+    /// expires and releases its dates. Set via
+    /// `[application] request_response_hours` or
+    /// `EA__APPLICATION__REQUEST_RESPONSE_HOURS`; must be 1-720.
+    #[serde(default = "default_request_response_hours")]
+    pub request_response_hours: i64,
+    /// How long an offer (an accepted request or a custom quote) holds its
+    /// dates for the guest to proceed, in hours. Set via
+    /// `[application] quote_valid_hours` or `EA__APPLICATION__QUOTE_VALID_HOURS`;
+    /// must be 1-720.
+    #[serde(default = "default_quote_valid_hours")]
+    pub quote_valid_hours: i64,
+    /// The last share of a request's response window, in percent, that counts
+    /// as near expiry: the inbox badge and the host's one reminder email. Set
+    /// via `[application] request_near_expiry_pct` or
+    /// `EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT`; must be 1-99.
+    #[serde(default = "default_request_near_expiry_pct")]
+    pub request_near_expiry_pct: i64,
+}
+
+/// Hours a host has to answer a request when no setting is given.
+pub const DEFAULT_REQUEST_RESPONSE_HOURS: i64 = 24;
+
+/// Hours an offer stays open for the guest when no setting is given.
+pub const DEFAULT_QUOTE_VALID_HOURS: i64 = 48;
+
+/// Near-expiry share of a response window, in percent, when no setting is given.
+pub const DEFAULT_REQUEST_NEAR_EXPIRY_PCT: i64 = 25;
+
+/// Longest response or offer window allowed: 30 days.
+pub const MAX_REQUEST_WINDOW_HOURS: i64 = 720;
+
+fn default_request_response_hours() -> i64 {
+    DEFAULT_REQUEST_RESPONSE_HOURS
+}
+
+fn default_quote_valid_hours() -> i64 {
+    DEFAULT_QUOTE_VALID_HOURS
+}
+
+fn default_request_near_expiry_pct() -> i64 {
+    DEFAULT_REQUEST_NEAR_EXPIRY_PCT
+}
+
+/// Longest stay accepted when no setting is given: about 10 years.
+pub const DEFAULT_MAX_STAY_NIGHTS: i64 = 3650;
+
+fn default_max_stay_nights() -> i64 {
+    DEFAULT_MAX_STAY_NIGHTS
+}
+
+fn default_pending_hold_minutes() -> i32 {
+    DEFAULT_PENDING_HOLD_MINUTES
+}
+
+/// Default grace window for "effective now" exchange rates, in seconds.
+pub const DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS: i64 = 60;
+
+/// Largest allowed grace window: anything longer would amount to backdating.
+pub const MAX_RATE_EFFECTIVE_GRACE_SECONDS: i64 = 300;
+
+fn default_rate_effective_grace_seconds() -> i64 {
+    DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS
+}
+
+impl Application {
+    /// Checks the stay limit, which must be positive or every booking would be
+    /// refused.
+    pub fn validate_max_stay_nights(&self) -> Result<(), String> {
+        (self.max_stay_nights > 0).then_some(()).ok_or_else(|| {
+            format!(
+                "application.max_stay_nights must be positive, got {}",
+                self.max_stay_nights
+            )
+        })
+    }
+
+    /// Checks the request windows: both window lengths must be 1-720 hours and
+    /// the near-expiry share 1-99 percent.
+    pub fn validate_request_windows(&self) -> Result<(), String> {
+        let hours = 1..=MAX_REQUEST_WINDOW_HOURS;
+        let checks = [
+            (
+                "request_response_hours",
+                self.request_response_hours,
+                hours.contains(&self.request_response_hours),
+                "1-720",
+            ),
+            (
+                "quote_valid_hours",
+                self.quote_valid_hours,
+                hours.contains(&self.quote_valid_hours),
+                "1-720",
+            ),
+            (
+                "request_near_expiry_pct",
+                self.request_near_expiry_pct,
+                (1..=99).contains(&self.request_near_expiry_pct),
+                "1-99",
+            ),
+        ];
+        checks
+            .into_iter()
+            .find(|(_, _, ok, _)| !ok)
+            .map_or(Ok(()), |(key, value, _, range)| {
+                Err(format!("application.{key} must be {range}, got {value}"))
+            })
+    }
+
+    /// The rate grace window, or why the configured value is invalid.
+    pub fn rate_effective_grace(&self) -> Result<chrono::Duration, String> {
+        (1..=MAX_RATE_EFFECTIVE_GRACE_SECONDS)
+            .contains(&self.rate_effective_grace_seconds)
+            .then(|| chrono::Duration::seconds(self.rate_effective_grace_seconds))
+            .ok_or_else(|| {
+                format!(
+                    "application.rate_effective_grace_seconds must be 1-{MAX_RATE_EFFECTIVE_GRACE_SECONDS}, got {}",
+                    self.rate_effective_grace_seconds
+                )
+            })
+    }
 }
 
 // Server model
+/// Where the service listens.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Server {
+    /// Address to bind.
     pub host: String,
+    /// Port to bind.
     pub port: u16,
 }
 
 // Database settings model
+/// Database connection settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct DatabaseSettings {
+    /// Database user.
     pub username: String,
+    /// Database password.
     pub password: String,
+    /// Database port.
     pub port: u16,
+    /// Database host.
     pub host: String,
+    /// Database name.
     pub database_name: String,
+    /// Whether to connect through the Cloud SQL socket.
     pub cloud: bool,
+    /// Cloud SQL instance, when `cloud` is set.
     pub instance_name: String,
+    /// Full connection URL, if given.
     pub database_url: Option<String>,
 }
 
 // Log level model
+/// Logging settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Log {
+    /// Log level filter.
     pub level: String,
 }
 
 // Environment model
+/// The environment a service runs in.
 #[derive(Clone, Debug, Deserialize)]
 pub enum Env {
+    /// A developer's machine.
     Development,
+    /// Automated tests.
     Testing,
+    /// The live service.
     Production,
 }
 
@@ -109,21 +277,15 @@ impl DatabaseSettings {
             )
         }
     }
-
-    #[allow(dead_code)]
-    pub fn connection_string_without_db(&self) -> String {
-        format!(
-            "postgres://{}:{}@{}:{}",
-            self.username, self.password, self.host, self.port
-        )
-    }
 }
 
 // Load settings
 // ... (structs and impls remain the same) ...
 
-// This is a cleaned-up version of YOUR original function.
+/// Resolves and loads application configuration settings based on the runtime environment.
 pub fn get_settings() -> Result<Settings, ConfigError> {
+    dotenvy::dotenv().ok();
+
     const DEFAULT_CONFIG_FILE: &str = "config/Default.toml";
     const ENV_CONFIG_PREFIX: &str = "config/";
     const RUN_ENV_VAR: &str = "RUN_ENV";
@@ -153,4 +315,209 @@ pub fn get_settings() -> Result<Settings, ConfigError> {
         .build()?;
 
     settings.try_deserialize()
+}
+
+#[cfg(test)]
+mod request_settings_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn load(env: &[(&str, &str)]) -> Result<Application, ConfigError> {
+        let env: HashMap<String, String> = env
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        Config::builder()
+            .set_default("max_attempts", 5)?
+            .add_source(
+                config::Environment::with_prefix("EA__APPLICATION")
+                    .separator("__")
+                    .source(Some(env)),
+            )
+            .build()?
+            .try_deserialize()
+    }
+
+    fn app(env: &[(&str, &str)]) -> Application {
+        match load(env) {
+            Ok(app) => app,
+            Err(e) => panic!("settings: {e}"),
+        }
+    }
+
+    #[test]
+    fn request_windows_default_when_absent() {
+        let app = app(&[]);
+        assert_eq!(app.request_response_hours, 24);
+        assert_eq!(app.quote_valid_hours, 48);
+        assert_eq!(app.request_near_expiry_pct, 25);
+        assert_eq!(app.validate_request_windows(), Ok(()));
+    }
+
+    #[test]
+    fn request_windows_are_overridden_by_env_vars() {
+        let app = app(&[
+            ("EA__APPLICATION__REQUEST_RESPONSE_HOURS", "6"),
+            ("EA__APPLICATION__QUOTE_VALID_HOURS", "72"),
+            ("EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT", "10"),
+        ]);
+        assert_eq!(app.request_response_hours, 6);
+        assert_eq!(app.quote_valid_hours, 72);
+        assert_eq!(app.request_near_expiry_pct, 10);
+    }
+
+    #[test]
+    fn out_of_range_request_windows_are_refused_naming_the_key() {
+        for (key, value, name) in [
+            (
+                "EA__APPLICATION__REQUEST_RESPONSE_HOURS",
+                "0",
+                "request_response_hours",
+            ),
+            (
+                "EA__APPLICATION__REQUEST_RESPONSE_HOURS",
+                "-3",
+                "request_response_hours",
+            ),
+            (
+                "EA__APPLICATION__REQUEST_RESPONSE_HOURS",
+                "721",
+                "request_response_hours",
+            ),
+            (
+                "EA__APPLICATION__QUOTE_VALID_HOURS",
+                "0",
+                "quote_valid_hours",
+            ),
+            (
+                "EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT",
+                "0",
+                "request_near_expiry_pct",
+            ),
+            (
+                "EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT",
+                "100",
+                "request_near_expiry_pct",
+            ),
+        ] {
+            let err = app(&[(key, value)]).validate_request_windows();
+            match err {
+                Err(message) => assert!(message.contains(name), "{message}"),
+                Ok(()) => panic!("{key}={value} was accepted"),
+            }
+        }
+    }
+}
+
+/// Env var: let feed fetches reach private and loopback hosts (local only).
+pub const CALENDAR_ALLOW_PRIVATE_HOSTS_ENV: &str = "EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS";
+/// Env var: feeds the calendar sync job fetches at once.
+pub const CALENDAR_JOB_CONCURRENCY_ENV: &str = "EA__CALENDAR_SYNC__JOB_CONCURRENCY";
+/// Env var: an extra trusted root CA (PEM) for local fixture servers.
+pub const CALENDAR_EXTRA_ROOT_CA_PATH_ENV: &str = "EA__CALENDAR_SYNC__EXTRA_ROOT_CA_PATH";
+/// Set by Cloud Run on services.
+pub const K_SERVICE_ENV: &str = "K_SERVICE";
+/// Set by Cloud Run on jobs.
+pub const CLOUD_RUN_JOB_ENV: &str = "CLOUD_RUN_JOB";
+/// Feeds fetched at once by the job when no setting is given.
+pub const DEFAULT_CALENDAR_JOB_CONCURRENCY: u16 = 8;
+
+/// Calendar sync settings. Read from the environment only, never from
+/// `config/*.toml`: cloud services may load `Development.toml`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CalendarSyncSettings {
+    /// Lets feed fetches reach private and loopback hosts. Local only.
+    pub allow_private_hosts: bool,
+    /// Feeds the job fetches at once.
+    pub job_concurrency: u16,
+    /// An extra trusted root CA (PEM file). Local only.
+    pub extra_root_ca_path: Option<std::path::PathBuf>,
+}
+
+impl Default for CalendarSyncSettings {
+    fn default() -> Self {
+        CalendarSyncSettings {
+            allow_private_hosts: false,
+            job_concurrency: DEFAULT_CALENDAR_JOB_CONCURRENCY,
+            extra_root_ca_path: None,
+        }
+    }
+}
+
+/// Why the calendar sync settings were refused.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CalendarSettingsError {
+    /// A variable couldn't be parsed.
+    #[error("{0} is not valid")]
+    Invalid(&'static str),
+    /// A local-only toggle is set on Cloud Run.
+    #[error("{0} must not be set on Cloud Run")]
+    LocalOnlyOnCloud(&'static str),
+}
+
+impl CalendarSyncSettings {
+    /// Reads the settings through `env`, such as `|k| std::env::var(k).ok()`.
+    pub fn from_env(
+        env: impl Fn(&str) -> Option<String>,
+    ) -> Result<CalendarSyncSettings, CalendarSettingsError> {
+        let non_empty = |key: &str| {
+            env(key)
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
+        let allow_private_hosts = non_empty(CALENDAR_ALLOW_PRIVATE_HOSTS_ENV)
+            .map(|v| match v.to_ascii_lowercase().as_str() {
+                "true" | "1" | "yes" => Ok(true),
+                "false" | "0" | "no" => Ok(false),
+                _ => Err(CalendarSettingsError::Invalid(
+                    CALENDAR_ALLOW_PRIVATE_HOSTS_ENV,
+                )),
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let job_concurrency = non_empty(CALENDAR_JOB_CONCURRENCY_ENV)
+            .map(|v| {
+                v.parse::<u16>()
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .ok_or(CalendarSettingsError::Invalid(CALENDAR_JOB_CONCURRENCY_ENV))
+            })
+            .transpose()?
+            .unwrap_or(DEFAULT_CALENDAR_JOB_CONCURRENCY);
+        let extra_root_ca_path = non_empty(CALENDAR_EXTRA_ROOT_CA_PATH_ENV).map(Into::into);
+        Ok(CalendarSyncSettings {
+            allow_private_hosts,
+            job_concurrency,
+            extra_root_ca_path,
+        })
+    }
+
+    /// Reads the settings from the process environment.
+    pub fn from_process_env() -> Result<CalendarSyncSettings, CalendarSettingsError> {
+        Self::from_env(|key| std::env::var(key).ok())
+    }
+}
+
+/// Refuses the local-only toggles when `env` shows a Cloud Run service or job.
+/// Callers log the error at `error` and exit non-zero.
+pub fn check_cloud_guard(
+    settings: &CalendarSyncSettings,
+    env: impl Fn(&str) -> Option<String>,
+) -> Result<(), CalendarSettingsError> {
+    let on_cloud = [K_SERVICE_ENV, CLOUD_RUN_JOB_ENV]
+        .iter()
+        .any(|key| env(key).is_some_and(|v| !v.is_empty()));
+    match (
+        on_cloud,
+        settings.allow_private_hosts,
+        &settings.extra_root_ca_path,
+    ) {
+        (true, true, _) => Err(CalendarSettingsError::LocalOnlyOnCloud(
+            CALENDAR_ALLOW_PRIVATE_HOSTS_ENV,
+        )),
+        (true, _, Some(_)) => Err(CalendarSettingsError::LocalOnlyOnCloud(
+            CALENDAR_EXTRA_ROOT_CA_PATH_ENV,
+        )),
+        _ => Ok(()),
+    }
 }

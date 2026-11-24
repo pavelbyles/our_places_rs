@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.rate AS \"rate!\", r.derived AS \"derived!\"\n        FROM (\n            SELECT rate, FALSE AS derived, effective_at, updated_at\n              FROM currency_exchange_rates\n             WHERE base_currency = $1 AND target_currency = $2\n               AND effective_at <= $3 AND ($4 OR retired_at IS NULL)\n            UNION ALL\n            SELECT rate, TRUE AS derived, effective_at, updated_at\n              FROM currency_exchange_rates\n             WHERE base_currency = $2 AND target_currency = $1\n               AND effective_at <= $3 AND ($4 OR retired_at IS NULL)\n        ) r\n        ORDER BY r.derived, r.effective_at DESC, r.updated_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rate!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 1,
+        "name": "derived!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "66bc937af5dd6304632dc59015abbfff625d6e47879df6b9956145822ec0eb75"
+}

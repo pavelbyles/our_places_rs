@@ -1,0 +1,107 @@
+# admin portal response headers (http://localhost:3012) — baseline capture, topcoat 0.11.0
+# captured 2026-11-11T03:33:21Z; cookie values redacted; Date/ETag/request-id/Content-Length dropped
+
+### GET / (anonymous)
+HTTP/1.1 308 Permanent Redirect
+location: /admin
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self' https://storage.googleapis.com http://localhost:4443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### GET /login (anonymous)
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+vary: Accept
+vary: Cookie
+vary: accept-encoding
+cache-control: private, no-cache
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self' https://storage.googleapis.com http://localhost:4443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### GET /admin (anonymous)
+HTTP/1.1 303 See Other
+location: /login?redirect=%2Fadmin
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self' https://storage.googleapis.com http://localhost:4443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### POST /login
+HTTP/1.1 303 See Other
+location: /admin
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self' https://storage.googleapis.com http://localhost:4443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+set-cookie: __Host-op_admin_session=<redacted>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=2592000
+
+
+### GET /admin (authenticated)
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+vary: Accept
+vary: Cookie
+vary: accept-encoding
+set-cookie: __Host-op_admin_session=<redacted>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=2592000
+cache-control: private, no-cache
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self' https://storage.googleapis.com http://localhost:4443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### GET /admin (authenticated, HX-Request partial)
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+vary: Accept
+vary: Cookie
+vary: accept-encoding
+set-cookie: __Host-op_admin_session=<redacted>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=2592000
+cache-control: private, no-cache
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self' https://storage.googleapis.com http://localhost:4443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### POST /logout
+HTTP/1.1 303 See Other
+location: /login
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self' https://storage.googleapis.com http://localhost:4443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+set-cookie: __Host-op_admin_session=<redacted>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=0; Expires=<date>
+
+
+### GET /admin (after logout)
+HTTP/1.1 303 See Other
+location: /login?redirect=%2Fadmin
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self' https://storage.googleapis.com http://localhost:4443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+

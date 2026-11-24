@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE pending_staff_invite\n        SET accepted_at = NOW()\n        WHERE action_token_id = $1\n          AND target_user_id = $2\n          AND accepted_at IS NULL\n        RETURNING host_user_id, invited_by, listing_ids\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "invited_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_ids",
+        "type_info": "UuidArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "941fead026afee2a6c379ce7654dc439da09316687190c26ada4a24d60a0fac6"
+}

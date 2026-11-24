@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE booking_enquiry\n        SET status = 'closed', closed_reason = $2, updated_at = NOW()\n        WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "enquiry_closed_reason",
+            "kind": {
+              "Enum": [
+                "request_submitted",
+                "quoted",
+                "closed_by_host",
+                "booked",
+                "expired",
+                "superseded"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "02b7ac68ea8ef5c5a41ca4de1e5c6f517a47824d6a3ae98569de1aa3ebf14d37"
+}

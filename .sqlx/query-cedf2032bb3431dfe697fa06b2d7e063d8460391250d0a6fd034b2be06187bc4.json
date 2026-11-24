@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n            FROM account_action_token\n            WHERE user_id = $1\n              AND purpose = 'password_reset'\n              AND created_at > NOW() - ($2::bigint * INTERVAL '1 second')\n        ) AS \"exists!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cedf2032bb3431dfe697fa06b2d7e063d8460391250d0a6fd034b2be06187bc4"
+}

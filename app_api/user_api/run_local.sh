@@ -16,15 +16,15 @@ ensure_db_running() {
   (
     flock -x 200
     if ! is_db_ready; then
-      echo "Database is not running. Starting Docker container 'ourplaces_db'..."
+      echo "Database is not running on localhost:5432. Starting database via db-start..."
       ROOT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD/../..")
-      docker start ourplaces_db 2>/dev/null || (cd "$ROOT_DIR" && docker compose up -d db)
+      (cd "$ROOT_DIR" && (db-start 2>/dev/null || devenv shell db-start 2>/dev/null || docker start ourplaces_db 2>/dev/null || true))
     fi
   ) 200>"$lockfile"
 
   # Wait up to 5 seconds for DB readiness
   local retries=5
-  until is_db_ready || [ $retries -eq 0 ]; do
+  until is_db_ready || [[ $retries -eq 0 ]]; do
     echo "Waiting for database to accept connections... (${retries}s remaining)"
     sleep 1
     retries=$((retries - 1))
@@ -33,7 +33,9 @@ ensure_db_running() {
 
 ensure_db_running
 
-# Run User API service
+# Run User API service. The admin password matches the local seed data
+# (db_core/seeds); it is only used when the local database has no admin yet.
+SYSTEM_ADMIN_PASSWORD="${SYSTEM_ADMIN_PASSWORD:-admin_changeme_2026}" \
 EA__SERVER__PORT="${EA__SERVER__PORT:-8083}" \
 EA__DATABASE__HOST="${EA__DATABASE__HOST:-localhost}" \
-cargo run
+exec cargo run

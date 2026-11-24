@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(expires_at > clock_timestamp(), FALSE) as \"held!\" FROM booking WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "held!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "81761b9e5aad24f66c969a48ea5a5aef2fdf041c19cf985fda2a7a66c5f85eb1"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        UPDATE turnover\n                        SET status = 'needs_cleaning',\n                            checkout_date = $1,\n                            updated_at = NOW()\n                        WHERE id = $2\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "08e7f30a28f8f56b7c6b0f9fd7e15da4b70df0c554fd0b6be5e893032680cb83"
+}

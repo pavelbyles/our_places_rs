@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.id, e.conversation_id, e.listing_id, e.guest_id, e.date_from, e.date_to,\n            e.number_of_persons, e.currency, e.status AS \"status: EnquiryStatus\",\n            e.closed_reason AS \"closed_reason: EnquiryClosedReason\", e.first_response_at,\n            e.created_at, e.updated_at, l.user_id AS host_id\n        FROM booking_enquiry e JOIN listing l ON l.id = e.listing_id\n        WHERE e.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "conversation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "status: EnquiryStatus",
+        "type_info": {
+          "Custom": {
+            "name": "enquiry_status",
+            "kind": {
+              "Enum": [
+                "open",
+                "closed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "closed_reason: EnquiryClosedReason",
+        "type_info": {
+          "Custom": {
+            "name": "enquiry_closed_reason",
+            "kind": {
+              "Enum": [
+                "request_submitted",
+                "quoted",
+                "closed_by_host",
+                "booked",
+                "expired",
+                "superseded"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "first_response_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "host_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "189d76f50ef340acf310335520f9c8951d0ab5ea8b317b15c6038f39f0a95112"
+}

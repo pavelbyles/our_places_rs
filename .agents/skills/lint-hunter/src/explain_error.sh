@@ -4,7 +4,7 @@
 ERROR_CODE=$1
 REF_FILE="skills/lint-hunter/references/dictionary_of_pain.md"
 
-if [ -z "$ERROR_CODE" ]; then
+if [[ -z "$ERROR_CODE" ]]; then
     echo "Usage: $0 <E-CODE>"
     exit 1
 fi

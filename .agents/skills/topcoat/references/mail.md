@@ -1,60 +1,62 @@
-Topcoat sends email through a pluggable [`Transport`]. Declare a mail with the [`mail!`] macro, then deliver it from any handler with [`send`].
+Build email with [`Mail::builder`] and deliver it with [`send`]. A [`Transport`] determines how messages are delivered.
 
 Everything below is re-exported from `topcoat::mail` and gated behind the `mail` feature. The SMTP transport additionally needs the `mail-smtp` feature.
 
 ```toml
 # Cargo.toml
 [dependencies]
-topcoat = { version = "0.6.2", features = ["mail", "mail-smtp"] }
+topcoat = { version = "0.12.1", features = ["mail", "mail-smtp"] }
 ```
 
 # Setup
 
-Wrap the transport your application delivers through in a [`MailConfig`] and register it with the router's [`mail`](RouterBuilderMailExt::mail) extension method:
+Choose a transport, wrap it in a [`Mailer`], and add it to the router's context:
 
-```rust
+```rust,standalone_crate
 use topcoat::{
-    mail::{FileTransport, MailConfig, RouterBuilderMailExt},
-    router::{Router, RouterBuilderDiscoverExt},
+    mail::{FileTransport, Mailer},
+    router::{Router, RouterBuilderDiscoverExt, module_router},
 };
 
 pub fn router() -> Router {
-    Router::builder()
+    module_router!()
         .discover()
-        .mail(
-            MailConfig::builder()
-                .transport(FileTransport::new("target/mail"))
-                .build(),
-        )
+        .with(Mailer::new(FileTransport::new("target/mail")))
         .build()
 }
 ```
 
-Handlers send through whichever transport is registered, so swapping it (a file transport in development, SMTP in production) changes nothing at the call sites.
+Handlers use the registered transport. You can change delivery settings without changing the code that sends messages.
 
 # Declaring and sending mail
 
-The [`mail!`] macro declares a [`Mail`] as `name: value` fields: the addresses, the subject, an HTML body written as a [`view!`](crate::view::view) body, attachments, and custom headers. [`send`] then delivers it through the registered transport:
+[`Mail::builder`] creates a [`Mail`]. [`html`](MailBuilder::html) renders a view, such as [`view!`](crate::view::view) markup, into the HTML body. Mail cannot stream, so the view must not be live:
 
 ```rust
+// src/app/api/welcome.rs
 use topcoat::{
     Result,
     context::Cx,
-    mail::{mail, send},
+    mail::{Mail, Mailbox, send},
     router::route,
+    view::view,
 };
 
-#[route(POST "/api/welcome")]
+#[route(POST)]
 async fn welcome(cx: &Cx) -> Result<&'static str> {
-    let mail = mail! {
-        from: ("Topcoat", "welcome@example.com"),
-        to: "ada@example.com",
-        subject: "Welcome, Ada!",
-        html: {
-            <h1>"Welcome!"</h1>
-            <p>"Your account is ready."</p>
-        },
-    }?;
+    let mail = Mail::builder()
+        .from(Mailbox::named("Topcoat", "welcome@example.com")?)
+        .to([Mailbox::new("ada@example.com")?])
+        .subject("Welcome, Ada!")
+        .html(
+            cx,
+            view! {
+                <h1>"Welcome!"</h1>
+                <p>"Your account is ready."</p>
+            },
+        )
+        .await?
+        .build()?;
 
     send(cx, mail).await?;
 
@@ -62,40 +64,48 @@ async fn welcome(cx: &Cx) -> Result<&'static str> {
 }
 ```
 
-Addresses can be written as strings, `(name, address)` pairs, or [`Mailbox`] values, alone or in collections. A plain-text alternative is derived from the HTML body by default, since mail without one scores worse with spam filters. See the [`mail!`] reference for the full field list, and [`MailBuilder`] for assembling a mail without the macro.
+Create addresses with [`Mailbox::new`] or [`Mailbox::named`], or parse the `Ada Lovelace <ada@example.com>` form. Recipient methods take a collection of addresses and add to the recipients on each call. Topcoat derives a plain-text body from the HTML by default. Set [`text`](MailBuilder::text) to supply your own wording, or pass [`TextBody::None`] to send only HTML.
 
-[`send`] returns a [`Receipt`] carrying the sent mail's `Message-ID`. Store it to thread a later mail onto this one through the `in_reply_to` and `references` fields. A receipt means the delivery mechanism accepted the mail, not that it reached an inbox. Sending fails with a [`SendError`] when the mail is incomplete (no `From` address, no recipients, or no body) or the delivery itself fails.
+[`send`] returns a [`Receipt`] with the message's `Message-ID`. Use that ID in `in_reply_to` and `references` to link a later reply. The receipt confirms that the transport accepted the message. It does not confirm inbox delivery.
+
+[`build`](MailBuilder::build) returns a [`MailError`] if the message lacks a sender, recipients, or body, or if an attachment or header is invalid. Sending returns a [`SendError`] if delivery fails.
 
 # Attachments
 
-The `attachments` field carries files with the mail. A downloadable [`Attachment`] is presented to the recipient as a file; an [inline attachment](Attachment::inline) is displayed where the HTML body references its content id through a `cid:` URL:
+Add files with [`attachments`](MailBuilder::attachments). Use [`Attachment::new`] for a downloadable file or [`Attachment::inline`] for content referenced by a `cid:` URL in the HTML:
 
 ```rust
-# use topcoat::Result;
-# use topcoat::mail::{Attachment, mail};
-# async fn example() -> Result<()> {
-let mail = mail! {
-    subject: "Your invoice",
-    html: {
-        <img src="cid:logo" alt="Example logo">
-        <p>"The invoice is attached."</p>
-    },
-    attachments: [
+# use topcoat::{Result, context::Cx};
+# use topcoat::{mail::{Attachment, Mail, Mailbox}, view::view};
+# async fn example(cx: &Cx) -> Result<()> {
+let mail = Mail::builder()
+#   .from(Mailbox::new("billing@example.com")?)
+#   .to([Mailbox::new("ada@example.com")?])
+    .subject("Your invoice")
+    .html(
+        cx,
+        view! {
+            <img src="cid:logo" alt="Example logo">
+            <p>"The invoice is attached."</p>
+        },
+    )
+    .await?
+    .attachments([
         Attachment::inline("logo", "image/png", b"\x89PNG"),
         Attachment::new("invoice.pdf", "application/pdf", b"%PDF-"),
-    ],
-}?;
+    ])
+    .build()?;
 # Ok(())
 # }
 ```
 
 # Transports
 
-The crate ships three transports; each implements the [`Transport`] trait the [`MailConfig`] wraps.
+Choose a transport for your delivery environment, or implement [`Transport`] for your own service.
 
 ## SMTP
 
-[`SmtpTransport`] (behind the `mail-smtp` feature) submits to an SMTP server: a mail provider's submission endpoint or your own mail server. Connections are pooled and reused across sends. Point it at a host with [`relay`](SmtpTransport::relay) (implicit TLS on port 465) or [`starttls`](SmtpTransport::starttls) (STARTTLS on port 587), or configure it from a connection URL, the form that fits a single environment variable:
+[`SmtpTransport`] submits messages to an SMTP server and reuses connections across sends. Enable `mail-smtp` to use it. [`relay`](SmtpTransport::relay) uses implicit TLS on port 465, and [`starttls`](SmtpTransport::starttls) uses STARTTLS on port 587. You can also configure the connection with a URL:
 
 ```rust,no_run
 # #[cfg(feature = "mail-smtp")]
@@ -113,24 +123,29 @@ let from_url = SmtpTransport::from_url("smtps://user:pass@smtp.example.com:465")
 
 ## Files during development
 
-[`FileTransport`] writes each mail as an `.eml` file instead of delivering it, so you can develop without a mail server and open the results in any mail client. The filename carries the send time, so a directory listing shows sends in order.
+[`FileTransport`] writes each message to an `.eml` file for local inspection. Filenames include the send time.
 
 ## Memory in tests
 
-[`MemoryTransport`] captures sent mail in memory for tests to assert on. Every clone shares the same capture, so a test keeps one clone and hands the other to the code under test:
+Use [`MemoryTransport`] in tests to collect outgoing messages. Add a `Mailer` to an empty `Cx`, then call `send` with that context. Keep a clone of the transport to inspect the messages:
 
 ```rust
 use topcoat::{
-    context::CxTestBuilder,
-    mail::{MailConfig, MemoryTransport, Mailbox, mail, send},
+    context::Cx,
+    mail::{Mail, Mailbox, Mailer, MemoryTransport, send},
 };
 
 # async fn test() -> topcoat::Result<()> {
 let transport = MemoryTransport::new();
-let config = MailConfig::builder().transport(transport.clone()).build();
-let cx = CxTestBuilder::new().app_context(config).build();
+let cx = Cx::new().with(Mailer::new(transport.clone()));
 
-send(&cx, mail! { from: "ada@example.com", to: "bob@example.com", text: "Hi" }?).await?;
+let mail = Mail::builder()
+    .from(Mailbox::new("ada@example.com")?)
+    .to([Mailbox::new("bob@example.com")?])
+    .text("Hi")
+    .build()?;
+
+send(&cx, mail).await?;
 
 assert_eq!(transport.sent().len(), 1);
 assert_eq!(transport.sent()[0].to(), [Mailbox::new("bob@example.com")?]);
@@ -138,7 +153,7 @@ assert_eq!(transport.sent()[0].to(), [Mailbox::new("bob@example.com")?]);
 # }
 ```
 
-It assembles the mail exactly as a delivering transport would, so a mail that would fail to send fails in the test too.
+A passing test does not mean a real mail service will accept the message.
 
 ## Custom transports
 

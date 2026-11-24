@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM listing_blocked_dates WHERE feed_id = $1 AND NOT (external_uid = ANY($2::text[]))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ef99b68a6b9774e03813fc59c48982ce1373a217ec7b2413e47e522a596b57d"
+}

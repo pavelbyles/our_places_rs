@@ -284,23 +284,6 @@ paths:
         "500":
           description: Internal server error
 
-  /api/v1/users/health_check:
-    get:
-      summary: Health check
-      operationId: healthCheckUsers
-      tags:
-        - users
-      x-google-backend: user-backend
-      responses:
-        "200":
-          description: Service is alive
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PingResponse"
-        "500":
-          description: Internal server error
-
   /api/v1/sessions:
     post:
       summary: Create or register a session
@@ -397,6 +380,7 @@ paths:
           description: Internal server error
 
 
+
   # ----------------------------------------------------------------------------
   # LISTING API
   # ----------------------------------------------------------------------------
@@ -439,9 +423,40 @@ paths:
           schema:
             type: string
             enum: [Apartment, House, Townhouse, Studio, Villa]
+        - in: query
+          name: include_inactive
+          description: Also return inactive listings. For the admin portal and past-stay lookups only. Ignored when dates are given.
+          schema:
+            type: boolean
+            default: false
+        - in: query
+          name: q
+          description: Text matched against the listing's name, city or country. At most 200 characters, with no control characters.
+          schema:
+            type: string
+        - in: query
+          name: check_in
+          description: First night of the stay. Both dates or neither. An empty value counts as absent.
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: check_out
+          description: Departure date of the stay. Both dates or neither. An empty value counts as absent.
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: guests
+          description: Party size, at least 1. With dates and no guests, totals are priced for 1 guest.
+          schema:
+            type: integer
+            minimum: 1
       responses:
+        "400":
+          description: INVALID_STAY_DATES, INVALID_GUESTS or INVALID_SEARCH_TEXT, with a message to show the guest
         "200":
-          description: List of listings
+          description: List of listings. With dates, only listings free for the whole stay, each with a stay_total when it can be priced
           content:
             application/json:
               schema:
@@ -553,23 +568,6 @@ paths:
         "500":
           description: Internal server error
 
-  /api/v1/listings/health_check:
-    get:
-      summary: Health check
-      operationId: healthCheckListings
-      tags:
-        - listings
-      x-google-backend: listing-backend
-      responses:
-        "200":
-          description: Service is alive
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PingResponse"
-        "500":
-          description: Internal server error
-
   # ----------------------------------------------------------------------------
   # BOOKING API
   # ----------------------------------------------------------------------------
@@ -621,11 +619,339 @@ paths:
               schema:
                 $ref: "#/components/schemas/BookingResponse"
         "400":
-          description: Validation error
+          description: Validation error, or INVALID_STAY_DATES for dates in the past or a stay over the limit
+        "409":
+          description: DATE_UNAVAILABLE, when the dates or the gap around another booking conflict
         "500":
           description: Internal server error
 
-  /api/v1/bookings/bookings/{id}:
+  /api/v1/currencies:
+    get:
+      summary: List active currencies (for currency selectors)
+      operationId: listActiveCurrencies
+      tags:
+        - currencies
+      x-google-backend: booking-backend
+      responses:
+        "200":
+          description: Active currencies, sorted by code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrenciesResponse"
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/availability:
+    get:
+      summary: Check listing availability for dates, keeping the listing's gap between bookings
+      operationId: checkAvailability
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: query
+          name: listing_id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+          required: true
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+          required: true
+      responses:
+        "200":
+          description: Availability check result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailabilityResponse"
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/user/{id}:
+    get:
+      summary: Get all bookings for a user
+      operationId: getUserBookings
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: List of bookings for user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingResponse"
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/listing/{id}:
+    get:
+      summary: Get all bookings for a listing
+      operationId: getListingBookings
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: List of bookings for listing
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingResponse"
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/quote:
+    post:
+      summary: What a stay costs a signed-in guest, with any promo code
+      operationId: getStayQuote
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: The stay's price, with the discount or the reason a code was refused
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Invalid stay, too many guests, or INVALID_STAY_DATES for dates in the past or a stay over the limit
+        "401":
+          description: Not signed in
+        "422":
+          description: FX_RATE_UNAVAILABLE for the payment currency
+  /api/v1/admin/promo-codes:
+    get:
+      summary: List promo codes with usage (all for admins, their own for hosts)
+      operationId: listPromoCodes
+      tags:
+        - promo-codes
+      x-google-backend: booking-backend
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: One page of codes
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: Missing or invalid token
+        "403":
+          description: Caller is not an admin or host
+    post:
+      summary: Create a promo code
+      operationId: createPromoCode
+      tags:
+        - promo-codes
+      x-google-backend: booking-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: The new code
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Invalid terms
+        "401":
+          description: Missing or invalid token
+        "403":
+          description: Caller is not an admin or host, or selected a listing they don't own
+        "409":
+          description: PROMO_CODE_EXISTS
+        "422":
+          description: CURRENCY_INACTIVE or CURRENCY_NOT_FOUND
+  /api/v1/admin/promo-codes/{id}:
+    get:
+      summary: One promo code with its usage
+      operationId: getPromoCode
+      tags:
+        - promo-codes
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: The code
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: Missing or invalid token
+        "403":
+          description: Caller doesn't manage this code
+        "404":
+          description: No such code
+  /api/v1/admin/promo-codes/{id}/deactivate:
+    post:
+      summary: Deactivate a promo code, which can't be undone
+      operationId: deactivatePromoCode
+      tags:
+        - promo-codes
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: The deactivated code
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: Missing or invalid token
+        "403":
+          description: Caller doesn't manage this code
+        "404":
+          description: No such code
+        "409":
+          description: PROMO_ALREADY_DEACTIVATED
+  /api/v1/bookings/listing/{id}/quote:
+    get:
+      summary: What a stay costs, for anyone browsing a listing (public, takes no promo code)
+      operationId: getPublicStayQuote
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - in: query
+          name: check_in
+          schema:
+            type: string
+            format: date
+          required: true
+        - in: query
+          name: check_out
+          schema:
+            type: string
+            format: date
+          required: true
+        - in: query
+          name: guests
+          schema:
+            type: integer
+        - in: query
+          name: currency
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The stay's price
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Invalid stay, too many guests, or INVALID_STAY_DATES for dates in the past or a stay over the limit
+        "422":
+          description: FX_RATE_UNAVAILABLE
+  /api/v1/bookings/listing/{id}/unavailable-ranges:
+    get:
+      summary: Booked date ranges for a listing (public, dates only)
+      operationId: getUnavailableRanges
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+          required: true
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+          required: true
+      responses:
+        "200":
+          description: Merged, sorted unavailable ranges in the window, including the listing's gap around each booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnavailableRangesResponse"
+        "400":
+          description: Window is empty, reversed, or longer than 366 days
+        "404":
+          description: Listing not found
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}:
     get:
       summary: Get booking by ID
       operationId: getBookingById
@@ -700,23 +1026,769 @@ paths:
         "500":
           description: Internal server error
 
-  /api/v1/bookings/health_check:
-    get:
-      summary: Health check
-      operationId: healthCheckBookings
+  /api/v1/bookings/{id}/transfer:
+    post:
+      summary: Transfer booking to a registered user
+      operationId: transferBooking
       tags:
         - bookings
       x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferBookingRequest"
       responses:
         "200":
-          description: Service is alive
+          description: Booking guest transferred
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PingResponse"
+                $ref: "#/components/schemas/BookingResponse"
+        "400":
+          description: Validation error
+        "404":
+          description: Booking not found or not pending
         "500":
           description: Internal server error
 
+  /api/v1/bookings/{id}/documents:
+    get:
+      summary: List all statutory tax documents for a booking
+      operationId: getBookingDocuments
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: List of statutory tax documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaxDocumentResponse"
+        "404":
+          description: Booking not found
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}/documents/{document_number}:
+    get:
+      summary: Get statutory tax document by document number
+      operationId: getBookingDocumentByNumber
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - in: path
+          name: document_number
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: Statutory tax document found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxDocumentResponse"
+        "404":
+          description: Document not found
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}/cancellation-quote:
+    get:
+      summary: Get itemized cancellation refund quote
+      operationId: getCancellationQuote
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: Itemized cancellation refund quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundQuote"
+        "404":
+          description: Booking not found
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}/messages:
+    get:
+      summary: Get all messages for a booking
+      operationId: getBookingMessages
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: Messages retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingMessagesWrapper"
+        "403":
+          description: Forbidden
+        "404":
+          description: Booking not found
+        "500":
+          description: Internal server error
+    post:
+      summary: Send a message for a booking
+      operationId: sendBookingMessage
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingMessageRequest"
+      responses:
+        "201":
+          description: Message created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingMessageResponse"
+        "400":
+          description: Bad request
+        "403":
+          description: Forbidden
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}/messages/read:
+    patch:
+      summary: Mark booking messages as read
+      operationId: markBookingMessagesRead
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: Messages marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkMessagesReadResponse"
+        "403":
+          description: Forbidden
+        "404":
+          description: Booking not found
+        "500":
+          description: Internal server error
+
+  /api/v1/internal/cron/complete-stays:
+    patch:
+      summary: Daily cron sweep to complete past checkout stays and issue statutory tax invoices
+      operationId: completeStaysCron
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: header
+          name: x-cron-secret
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: Past checkout stays completed and invoiced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompleteStaysResponse"
+        "401":
+          description: Unauthorized - invalid or missing cron secret
+        "500":
+          description: Internal server error
+
+  /api/v1/internal/cron/process-scheduled-notifications:
+    post:
+      summary: Process scheduled booking notifications (pre-arrival guides and hold reminders)
+      operationId: processScheduledNotifications
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: header
+          name: x-cron-secret
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: Scheduled notification sweep completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CronSweepResponse"
+        "401":
+          description: Unauthorized - invalid or missing cron secret
+        "500":
+          description: Internal server error
+
+  /api/v1/enquiries:
+    post:
+      summary: "Send an enquiry about a stay (holds no dates)"
+      operationId: createEnquiry
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The enquiry"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "Invalid stay, guests or text"
+        "403":
+          description: "OWN_LISTING"
+        "409":
+          description: "LISTING_UNAVAILABLE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/enquiries/{id}:
+    get:
+      summary: "An enquiry, for its guest, the host or an admin"
+      operationId: getEnquiry
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The enquiry; the host and admins also get host_estimate (approximate payout at standard rates)"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "404":
+          description: "No such enquiry"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/enquiries/{id}/close:
+    post:
+      summary: "Close an enquiry (host or admin)"
+      operationId: closeEnquiry
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The closed enquiry"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/enquiries/{id}/quote:
+    post:
+      summary: "Quote straight on an enquiry; it becomes a quoted request holding its dates"
+      operationId: quoteEnquiry
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The quoted request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "INVALID_QUOTE_PRICE"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "DATE_UNAVAILABLE, REQUEST_ALREADY_LIVE, REQUEST_NOT_OPEN or LISTING_UNAVAILABLE"
+        "422":
+          description: "FX_RATE_UNAVAILABLE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests:
+    post:
+      summary: "Submit a request to book; the stay is priced and its dates held"
+      operationId: createBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "Invalid stay, guests or text"
+        "403":
+          description: "OWN_LISTING"
+        "409":
+          description: "BOOKING_MODE_NOT_ALLOWED, DATE_UNAVAILABLE, REQUEST_ALREADY_LIVE or LISTING_UNAVAILABLE"
+        "422":
+          description: "PROMO_*, FX_RATE_UNAVAILABLE or REQUEST_WINDOW_TOO_SHORT"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/mine:
+    get:
+      summary: "The signed-in guest's requests and enquiries"
+      operationId: myBookingRequests
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      responses:
+        "200":
+          description: "Requests and enquiries, newest first"
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}:
+    get:
+      summary: "A request, for its guest, the host or an admin"
+      operationId: getBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "404":
+          description: "No such request"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/accept:
+    post:
+      summary: "Accept a request at its requested price (host or admin)"
+      operationId: acceptBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The accepted request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED or LISTING_UNAVAILABLE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/decline:
+    post:
+      summary: "Decline a request, or withdraw an offer (host or admin)"
+      operationId: declineBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The declined request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "DECLINE_NOTE_REQUIRED"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED or QUOTE_EXPIRED"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/withdraw:
+    post:
+      summary: "Withdraw a request or offer (guest)"
+      operationId: withdrawBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The withdrawn request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED or QUOTE_EXPIRED"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/checkout:
+    post:
+      summary: "Take up an offer; it becomes a pending hold at the accepted price"
+      operationId: checkoutBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The pending booking"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED, QUOTE_EXPIRED, QUOTE_SUPERSEDED, LISTING_UNAVAILABLE or DATE_UNAVAILABLE"
+        "422":
+          description: "CURRENCY_INACTIVE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/quote-preview:
+    post:
+      summary: "Price a custom quote without sending it (host or admin)"
+      operationId: previewQuote
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The guest's price"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "INVALID_QUOTE_PRICE"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/quote:
+    post:
+      summary: "Send a custom quote on a request (host or admin)"
+      operationId: sendQuote
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The quoted request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "INVALID_QUOTE_PRICE"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED or LISTING_UNAVAILABLE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/conversations/{id}/messages:
+    get:
+      summary: "A guest x listing conversation's messages"
+      operationId: getConversationMessages
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The thread"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "404":
+          description: "No such conversation"
+        "401":
+          description: "Missing or invalid token"
+    post:
+      summary: "Post a message to a conversation"
+      operationId: postConversationMessage
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The message"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "Empty or invalid text"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/conversations/{id}/messages/read:
+    patch:
+      summary: "Mark the other party's messages read"
+      operationId: markConversationRead
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "How many were marked"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/conversations/unread-count:
+    get:
+      summary: "Unread messages from guests on the caller's listings (admin: all listings)"
+      operationId: getUnreadMessageCount
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      responses:
+        "200":
+          description: "The count, as { unread_messages }"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "Hosts and admins only"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/inbox:
+    get:
+      summary: "Open enquiries and live requests with response times (host: own listings; admin: all)"
+      operationId: getInbox
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      responses:
+        "200":
+          description: "The inbox page"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "Unknown kind"
+        "403":
+          description: "Hosts and admins only"
+        "401":
+          description: "Missing or invalid token"
 components:
   securitySchemes:
     api_key:
@@ -850,6 +1922,14 @@ components:
         days_between_bookings:
           type: integer
           default: 0
+        cleaning_fee:
+          type: number
+          nullable: true
+          description: Host cleaning fee (base currency)
+        damage_deposit:
+          type: number
+          nullable: true
+          description: Refundable damage deposit (base currency)
 
     UpdatedListingRequest:
       type: object
@@ -871,10 +1951,34 @@ components:
           type: integer
         days_between_bookings:
           type: integer
+        cleaning_fee:
+          type: number
+          nullable: true
+          description: Host cleaning fee (base currency)
+        damage_deposit:
+          type: number
+          nullable: true
+          description: Refundable damage deposit (base currency)
 
+    StayTotal:
+      type: object
+      description: What a stay costs, as shown on a search result. The same total as a quote and a hold with no promo code.
+      properties:
+        nights:
+          type: integer
+        total_amount:
+          type: string
+          description: Everything the guest pays, including the refundable deposit.
+        damage_deposit:
+          type: string
+          description: The refundable deposit included in the total.
+        currency:
+          type: string
     ListingResponse:
       type: object
       properties:
+        stay_total:
+          $ref: "#/components/schemas/StayTotal"
         id:
           type: string
           format: uuid
@@ -900,6 +2004,18 @@ components:
           type: integer
         days_between_bookings:
           type: integer
+        commission_pct:
+          type: string
+          nullable: true
+          description: Platform commission percentage
+        cleaning_fee:
+          type: number
+          nullable: true
+          description: Host cleaning fee (base currency)
+        damage_deposit:
+          type: number
+          nullable: true
+          description: Refundable damage deposit (base currency)
 
     # -------------------------------------------------------------
     # Booking Models
@@ -909,16 +2025,10 @@ components:
       required:
         - guest_id
         - listing_id
-        - date_from
-        - date_to
+        - check_in
+        - check_out
         - currency
-        - daily_rate
-        - number_of_persons
-        - total_days
-        - sub_total_price
-        - total_price
-        - cancellation_policy
-        - fee_breakdown
+        - agreed_cancellation_policy
       properties:
         guest_id:
           type: string
@@ -926,41 +2036,93 @@ components:
         listing_id:
           type: string
           format: uuid
-        date_from:
+        check_in:
           type: string
           format: date
-        date_to:
+        check_out:
           type: string
           format: date
+        num_adults:
+          type: integer
+          default: 1
+        num_children:
+          type: integer
+          default: 0
+        num_infants:
+          type: integer
+          default: 0
+        num_pets:
+          type: integer
+          default: 0
+        message_to_host:
+          type: string
+          nullable: true
+        estimated_arrival_time:
+          type: string
+          nullable: true
+        is_business_trip:
+          type: boolean
+          default: false
+        business_company_name:
+          type: string
+          nullable: true
+        business_tax_id:
+          type: string
+          nullable: true
         currency:
           type: string
-        daily_rate:
-          type: number
-        number_of_persons:
-          type: integer
-        total_days:
-          type: integer
-        sub_total_price:
-          type: number
-        discount_value:
-          type: number
-        tax_value:
-          type: number
-        fee_breakdown:
-          type: array
-          items:
-            $ref: "#/components/schemas/FeeItem"
-        total_price:
-          type: number
-        cancellation_policy:
-          type: string
-          enum: [Flexible, Moderate, Strict]
+        agreed_cancellation_policy:
+          $ref: "#/components/schemas/CancellationPolicy"
 
     UpdatedBookingRequest:
       type: object
       properties:
         status:
           $ref: "#/components/schemas/BookingStatus"
+        metadata:
+          $ref: "#/components/schemas/BookingMetadataResponse"
+        door_access_code:
+          type: string
+          nullable: true
+        date_from:
+          type: string
+          format: date
+          nullable: true
+        date_to:
+          type: string
+          format: date
+          nullable: true
+
+    BookingMetadataResponse:
+      type: object
+      properties:
+        num_adults:
+          type: integer
+          default: 1
+        num_children:
+          type: integer
+          default: 0
+        num_infants:
+          type: integer
+          default: 0
+        num_pets:
+          type: integer
+          default: 0
+        message_to_host:
+          type: string
+          nullable: true
+        estimated_arrival_time:
+          type: string
+          nullable: true
+        is_business_trip:
+          type: boolean
+          default: false
+        business_company_name:
+          type: string
+          nullable: true
+        business_tax_id:
+          type: string
+          nullable: true
 
     BookingResponse:
       type: object
@@ -996,12 +2158,34 @@ components:
           type: number
         discount_value:
           type: number
+          nullable: true
         tax_value:
           type: number
+          nullable: true
         total_price:
           type: number
         cancellation_policy:
+          $ref: "#/components/schemas/CancellationPolicy"
+        metadata:
+          $ref: "#/components/schemas/BookingMetadataResponse"
+        door_access_code:
           type: string
+          nullable: true
+        cleaning_fee:
+          type: number
+          nullable: true
+        damage_deposit:
+          type: number
+          nullable: true
+        platform_fee:
+          type: number
+          nullable: true
+        tax_rate:
+          type: number
+          nullable: true
+        exchange_rate:
+          type: number
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -1015,11 +2199,69 @@ components:
         name:
           type: string
         amount:
-          type: number
+          type: string
+          description: Monetary fee amount serialized as decimal string
 
     BookingStatus:
       type: string
-      enum: [Pending, Confirmed, Cancelled, Completed]
+      enum: [pending, confirmed, cancelled, completed]
+
+    CancellationPolicy:
+      type: string
+      enum: [flexible, moderate, strict, firm, limited]
+
+    TransferBookingRequest:
+      type: object
+      required:
+        - guest_id
+      properties:
+        guest_id:
+          type: string
+          format: uuid
+
+    CurrenciesResponse:
+      type: object
+      properties:
+        currencies:
+          type: array
+          items:
+            $ref: "#/components/schemas/Currency"
+    Currency:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "JMD"
+        name:
+          type: string
+          example: "Jamaican Dollar"
+        active:
+          type: boolean
+    AvailabilityResponse:
+      type: object
+      properties:
+        available:
+          type: boolean
+
+    UnavailableRange:
+      type: object
+      required: [date_from, date_to]
+      properties:
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+
+    UnavailableRangesResponse:
+      type: object
+      required: [ranges]
+      properties:
+        ranges:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnavailableRange"
 
     PingResponse:
       type: object
@@ -1088,6 +2330,237 @@ components:
           type: string
           format: date-time
         expires_at:
+          type: integer
+          format: int64
+
+    CompleteStaysResponse:
+      type: object
+      properties:
+        completed_count:
+          type: integer
+        booking_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    CronSweepResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        pre_arrival_processed:
+          type: integer
+        hold_reminders_processed:
+          type: integer
+
+    RefundQuote:
+      type: object
+      properties:
+        policy_pct:
+          type: string
+          description: Refund policy percentage as decimal string
+        accommodation_refund:
+          type: string
+          description: Accommodation portion refunded as decimal string
+        cleaning_refund:
+          type: string
+          description: Cleaning fee portion refunded as decimal string
+        deposit_refund:
+          type: string
+          description: Security/damage deposit portion refunded as decimal string
+        tax_refund:
+          type: string
+          description: Statutory GCT tax portion refunded as decimal string
+        platform_fee_refund:
+          type: string
+          description: Platform fee portion refunded as decimal string
+        refund_total:
+          type: string
+          description: Total refund amount as decimal string
+        retained_total:
+          type: string
+          description: Total retained amount by host/platform as decimal string
+
+    TaxDocumentType:
+      type: string
+      enum: [payment_receipt, tax_invoice, refund_receipt]
+
+    TaxDocumentStatus:
+      type: string
+      enum: [issued, superseded]
+
+    InvoiceTaxCategory:
+      type: string
+      enum: [gct, exempt]
+
+    TaxDocumentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        document_type:
+          $ref: "#/components/schemas/TaxDocumentType"
+        document_number:
+          type: string
+        revision:
+          type: integer
+        status:
+          $ref: "#/components/schemas/TaxDocumentStatus"
+        supersedes_id:
+          type: string
+          format: uuid
+          nullable: true
+        booking_id:
+          type: string
+          format: uuid
+        booking_history_id:
+          type: string
+          format: uuid
+          nullable: true
+        recipient_id:
+          type: string
+          format: uuid
+        listing_id:
+          type: string
+          format: uuid
+        issue_date:
+          type: string
+          format: date-time
+        supplier_name:
+          type: string
+        supplier_address:
+          type: string
+        supplier_trn:
+          type: string
+        recipient_name:
+          type: string
+        recipient_email:
+          type: string
+        recipient_company_name:
+          type: string
+          nullable: true
+        recipient_trn:
+          type: string
+          nullable: true
+        currency:
+          type: string
+        exchange_rate:
+          type: string
+        jmd_exchange_rate:
+          type: string
+        accommodation_net:
+          type: string
+        cleaning_fee:
+          type: string
+        taxable_amount:
+          type: string
+        tax_rate:
+          type: string
+        tax_amount:
+          type: string
+        platform_fee:
+          type: string
+        damage_deposit:
+          type: string
+        total_amount:
+          type: string
+        amount_previously_paid:
+          type: string
+          nullable: true
+        balance_due:
+          type: string
+          nullable: true
+        refund_pct:
+          type: string
+          nullable: true
+        retained_amount:
+          type: string
+          nullable: true
+        jmd_tax_amount:
+          type: string
+        jmd_total_amount:
+          type: string
+        line_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceLineItem"
+        created_at:
+          type: string
+          format: date-time
+
+    InvoiceLineItem:
+      type: object
+      properties:
+        description:
+          type: string
+        quantity:
+          type: integer
+        unit_price:
+          type: string
+        tax_category:
+          $ref: "#/components/schemas/InvoiceTaxCategory"
+        tax_rate:
+          type: string
+        tax_amount:
+          type: string
+        total_amount:
+          type: string
+
+    MessageSenderRole:
+      type: string
+      enum: [guest, host, admin]
+
+    CreateBookingMessageRequest:
+      type: object
+      required:
+        - message_text
+      properties:
+        message_text:
+          type: string
+
+    BookingMessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        booking_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+        sender_role:
+          $ref: "#/components/schemas/MessageSenderRole"
+        sender_name:
+          type: string
+        message_text:
+          type: string
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    BookingMessagesWrapper:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookingMessageResponse"
+        unread_count:
+          type: integer
+          format: int64
+
+    MarkMessagesReadResponse:
+      type: object
+      properties:
+        updated_count:
           type: integer
           format: int64
 

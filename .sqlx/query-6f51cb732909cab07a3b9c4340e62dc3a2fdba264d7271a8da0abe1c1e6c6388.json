@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH live AS (\n            SELECT id, status::text AS from_status FROM booking_request\n            WHERE listing_id = $1 AND guest_id = $2\n              AND status IN ('open', 'accepted', 'quoted')\n            FOR UPDATE\n        )\n        UPDATE booking_request r\n        SET status = 'cancelled', updated_at = NOW()\n        FROM live\n        WHERE r.id = live.id\n        RETURNING r.id, live.from_status AS \"from_status!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "from_status!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "6f51cb732909cab07a3b9c4340e62dc3a2fdba264d7271a8da0abe1c1e6c6388"
+}

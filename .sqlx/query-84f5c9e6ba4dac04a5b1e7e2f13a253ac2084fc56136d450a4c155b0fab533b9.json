@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT currency, net_payout_amount, promo_discount_amount,\n            status = 'pending'::payout_status as \"pending!\"\n        FROM host_payout_ledger WHERE booking_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "currency",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "net_payout_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "promo_discount_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "pending!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "84f5c9e6ba4dac04a5b1e7e2f13a253ac2084fc56136d450a4c155b0fab533b9"
+}

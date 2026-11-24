@@ -1,0 +1,133 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO listing_calendar_feed (listing_id, name, url, created_by)\n        VALUES ($1, $2, $3, $4)\n        RETURNING id, listing_id, name, url, is_active, sync_generation,\n            last_status AS \"last_status: FeedStatus\", last_error, last_warning,\n            last_attempt_at, last_success_at, consecutive_failures, failure_alerted_at,\n            event_count, created_by, created_at, updated_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "sync_generation",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "last_status: FeedStatus",
+        "type_info": {
+          "Custom": {
+            "name": "calendar_feed_status",
+            "kind": {
+              "Enum": [
+                "never",
+                "ok",
+                "warning",
+                "failed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "last_warning",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_attempt_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "last_success_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "consecutive_failures",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "failure_alerted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "event_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "4fc430b03205c1ed29f7bbf41553b2a0fff26ca1978c735b58d36835cb8f4df3"
+}

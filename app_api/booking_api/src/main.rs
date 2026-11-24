@@ -17,13 +17,62 @@ use std::net::TcpListener;
 /// Test main func doc
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+
     // Initialize tracing
-    api_core::tracing_utils::init_subscriber();
+    api_core::tracing_utils::init_subscriber(env!("CARGO_PKG_NAME"));
 
     tracing::info!("Starting application");
 
     // Get settings
     let config = settings::get_settings().context("Could not load settings")?;
+
+    // User tokens cannot be verified without it, and there is no fallback.
+    api_core::auth::jwt_secret().context("Refusing to start")?;
+
+    if config.application.pending_hold_minutes <= 0 {
+        anyhow::bail!(
+            "application.pending_hold_minutes must be positive, got {}",
+            config.application.pending_hold_minutes
+        );
+    }
+    config
+        .application
+        .validate_max_stay_nights()
+        .map_err(anyhow::Error::msg)
+        .context("Refusing to start")?;
+    tracing::info!(
+        hold_minutes = config.application.pending_hold_minutes,
+        "Pending booking hold window"
+    );
+    config
+        .application
+        .validate_request_windows()
+        .map_err(anyhow::Error::msg)
+        .context("Refusing to start")?;
+    tracing::info!(
+        response_hours = config.application.request_response_hours,
+        quote_valid_hours = config.application.quote_valid_hours,
+        near_expiry_pct = config.application.request_near_expiry_pct,
+        "Request-to-book windows"
+    );
+    let grace = config
+        .application
+        .rate_effective_grace()
+        .map_err(anyhow::Error::msg)
+        .context("Refusing to start")?;
+    tracing::info!(
+        grace_seconds = grace.num_seconds(),
+        "Exchange-rate grace window"
+    );
+
+    // Validate statutory tax configuration fast-fail (Spec §1.7)
+    let _tax_settings =
+        booking_api::settings::TaxSettings::from_env().map_err(|e| anyhow::anyhow!(e))?;
+
+    // Validate cron secret configuration fast-fail (Spec §1.7)
+    let _cron_settings =
+        booking_api::settings::CronSettings::from_env().map_err(|e| anyhow::anyhow!(e))?;
 
     // Create database connection pool
     tracing::info!("Connecting to database");
@@ -44,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind(&address)
         .context(format!("Failed to bind to random port {}", address))?;
-    let _ = run(
+    let served = run(
         listener,
         db_connection_pool,
         apis::configure_routes,
@@ -53,5 +102,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Server error");
 
-    Ok(())
+    // Send any buffered spans before the instance goes away.
+    api_core::tracing_utils::shutdown_telemetry().await;
+    served
 }

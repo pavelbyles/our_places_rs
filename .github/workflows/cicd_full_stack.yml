@@ -5,12 +5,14 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT }}
   GAR_REPO: ${{ vars.GAR_REPO}}
   REGION: us-central1
-  SERVICE_PREFIX_TC: our-places-web-app-tc
-  SERVICE_PREFIX_ADMIN_TC: our-places-web-app-admin-tc
+  SERVICE_PREFIX_WEB_UI_GUEST: our-places-web-ui-guest
+  SERVICE_PREFIX_WEB_UI_ADMIN: our-places-web-ui-admin
   SERVICE_PREFIX_IMAGE_WORKER: our-places-image-worker
+  SERVICE_PREFIX_EMAIL_WORKER: our-places-email-worker
   CARGO_TERM_COLOR: always
   GCS_PUBLIC_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_PUBLIC_PREFIX }}
   GCS_RAW_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
+  GCS_MAP_TILES_BUCKET_PREFIX: ${{ vars.INFRA_GCS_MAP_TILES_BUCKET_PREFIX }}
 
 on:
   push:
@@ -27,8 +29,9 @@ on:
           - 'all'
           - 'backend'
           - 'image_worker'
-          - 'webapp_tc'
-          - 'webapp_admin_tc'
+          - 'email_worker'
+          - 'web_ui_guest'
+          - 'web_ui_admin'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,12 +48,13 @@ jobs:
     outputs:
       backend: ${{ steps.eval.outputs.backend }}
       image_worker: ${{ steps.eval.outputs.image_worker }}
-      webapp_tc: ${{ steps.eval.outputs.webapp_tc }}
-      webapp_admin_tc: ${{ steps.eval.outputs.webapp_admin_tc }}
+      email_worker: ${{ steps.eval.outputs.email_worker }}
+      web_ui_guest: ${{ steps.eval.outputs.web_ui_guest }}
+      web_ui_admin: ${{ steps.eval.outputs.web_ui_admin }}
       docs_only: ${{ steps.eval.outputs.docs_only }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -78,21 +82,28 @@ jobs:
               - 'Cargo.*'
               - 'Dockerfile.image_worker'
               - '.github/workflows/cicd_full_stack.yml'
-            webapp_tc:
-              - 'web_app_tc/**'
-              - 'web_app_common_tc/**'
+            email_worker:
+              - 'app_api/email_worker/**'
               - 'common/**'
-              - 'package*.json'
+              - 'db_core/**'
               - 'Cargo.*'
-              - 'web_app_tc/Dockerfile.web_app_tc'
+              - 'Dockerfile.email_worker'
               - '.github/workflows/cicd_full_stack.yml'
-            webapp_admin_tc:
-              - 'web_app_admin_tc/**'
-              - 'web_app_common_tc/**'
+            web_ui_guest:
+              - 'web_ui_guest/**'
+              - 'web_ui_common/**'
+              - 'web_client/**'
               - 'common/**'
-              - 'package*.json'
               - 'Cargo.*'
-              - 'web_app_admin_tc/Dockerfile.web_app_admin_tc'
+              - 'Dockerfile.web_ui_guest'
+              - '.github/workflows/cicd_full_stack.yml'
+            web_ui_admin:
+              - 'web_ui_admin/**'
+              - 'web_ui_common/**'
+              - 'web_client/**'
+              - 'common/**'
+              - 'Cargo.*'
+              - 'Dockerfile.web_ui_admin'
               - '.github/workflows/cicd_full_stack.yml'
 
       - name: Evaluate Change Flags
@@ -104,20 +115,23 @@ jobs:
           if [ "$TARGET" = "all" ]; then
             echo "backend=true" >> $GITHUB_OUTPUT
             echo "image_worker=true" >> $GITHUB_OUTPUT
-            echo "webapp_tc=true" >> $GITHUB_OUTPUT
-            echo "webapp_admin_tc=true" >> $GITHUB_OUTPUT
+            echo "email_worker=true" >> $GITHUB_OUTPUT
+            echo "web_ui_guest=true" >> $GITHUB_OUTPUT
+            echo "web_ui_admin=true" >> $GITHUB_OUTPUT
             echo "docs_only=false" >> $GITHUB_OUTPUT
           elif [ "$TARGET" != "changed" ]; then
             echo "backend=${{ inputs.deploy_target == 'backend' || steps.filter.outputs.backend == 'true' }}" >> $GITHUB_OUTPUT
             echo "image_worker=${{ inputs.deploy_target == 'image_worker' || steps.filter.outputs.image_worker == 'true' }}" >> $GITHUB_OUTPUT
-            echo "webapp_tc=${{ inputs.deploy_target == 'webapp_tc' || steps.filter.outputs.webapp_tc == 'true' }}" >> $GITHUB_OUTPUT
-            echo "webapp_admin_tc=${{ inputs.deploy_target == 'webapp_admin_tc' || steps.filter.outputs.webapp_admin_tc == 'true' }}" >> $GITHUB_OUTPUT
+            echo "email_worker=${{ inputs.deploy_target == 'email_worker' || steps.filter.outputs.email_worker == 'true' }}" >> $GITHUB_OUTPUT
+            echo "web_ui_guest=${{ inputs.deploy_target == 'web_ui_guest' || steps.filter.outputs.web_ui_guest == 'true' }}" >> $GITHUB_OUTPUT
+            echo "web_ui_admin=${{ inputs.deploy_target == 'web_ui_admin' || steps.filter.outputs.web_ui_admin == 'true' }}" >> $GITHUB_OUTPUT
             echo "docs_only=false" >> $GITHUB_OUTPUT
           else
             echo "backend=${{ steps.filter.outputs.backend }}" >> $GITHUB_OUTPUT
             echo "image_worker=${{ steps.filter.outputs.image_worker }}" >> $GITHUB_OUTPUT
-            echo "webapp_tc=${{ steps.filter.outputs.webapp_tc }}" >> $GITHUB_OUTPUT
-            echo "webapp_admin_tc=${{ steps.filter.outputs.webapp_admin_tc }}" >> $GITHUB_OUTPUT
+            echo "email_worker=${{ steps.filter.outputs.email_worker }}" >> $GITHUB_OUTPUT
+            echo "web_ui_guest=${{ steps.filter.outputs.web_ui_guest }}" >> $GITHUB_OUTPUT
+            echo "web_ui_admin=${{ steps.filter.outputs.web_ui_admin }}" >> $GITHUB_OUTPUT
             echo "docs_only=${{ steps.filter.outputs.docs_only }}" >> $GITHUB_OUTPUT
           fi
 
@@ -129,10 +143,10 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: cargo-audit
       - run: cargo audit
@@ -142,19 +156,21 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy
-      - name: Install daisyUI
-        run: npm ci
       - name: Run Clippy
         env:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo clippy --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings
+        run: cargo clippy --locked --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings
+      # Workflow syntax, expressions and action inputs. Shellcheck stays off
+      # until the existing run scripts' findings are fixed (see #58 handoff).
+      - name: Lint GitHub Actions workflows
+        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7 -shellcheck=
   # =========================================================
   # Test API's and Web App
   # =========================================================
@@ -164,12 +180,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo make
-        uses: davidB/rust-cargo-make@v1
+        uses: davidB/rust-cargo-make@eb4338cc4e8145107109b722ee749f23e61455f0 # v1.17.0
       - name: Install sqlx-cli
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: sqlx-cli
       - name: Build app
@@ -177,7 +193,7 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo build --verbose --workspace --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
+        run: cargo build --locked --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
       - name: Run DB and Migrations (Local Test)
         run: cargo make --cwd app_api/listing_api db-migrate
       - name: Run testsTest API
@@ -185,39 +201,122 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo test --verbose --workspace --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
+          # No Pub/Sub on the runner: queued emails stay in the outbox instead
+          # of each publish failing against the GCP metadata server.
+          DISABLE_PUBSUB_PUBLISH: "true"
+        run: cargo test --locked --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
 
-  test-web-tc:
-    name: Test Web Topcoat
+  test-web-ui:
+    name: Test Web UI
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install daisyUI
-        run: npm ci
-      - name: Install msmtp
-        run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
-      - name: Run web_app_tc tests
-        run: cargo test -p web_app_tc -p web_app_common_tc --verbose
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Run web_client and web_ui_* tests
+        env:
+          SQLX_OFFLINE: true
+        run: cargo test --locked -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin --verbose
 
-  test-web-admin-tc:
-    name: Test Web Admin Topcoat
+  # =========================================================
+  # BUILD MAP TILES (spec 103 §1.10)
+  # Downloads a CLI, npm packages and upstream map data, so it runs with
+  # no GCP auth and no secrets. "Upload Map Tiles" in the setup job
+  # publishes the artifact.
+  # =========================================================
+  build-map-tiles:
+    name: Build Map Tiles
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # The workflow-level value comes from a secret; this job needs none.
+      PROJECT_ID: ""
+      TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+      MAP_TILES_VERSION: ${{ github.ref == 'refs/heads/main' && vars.MAP_TILES_VERSION_PROD || vars.MAP_TILES_VERSION_DEV }}
+    outputs:
+      needed: ${{ steps.check.outputs.needed }}
+      mode: ${{ steps.check.outputs.mode }}
+      version: ${{ steps.check.outputs.version }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install daisyUI
-        run: npm ci
-      - name: Install msmtp
-        run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
-      - name: Run web_app_admin_tc tests
-        run: cargo test -p web_app_admin_tc --verbose
+      - name: Check Published Tiles
+        id: check
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAP_TILES_VERSION:-}" ]; then
+            echo "::notice::MAP_TILES_VERSION_${TILES_ENV^^} is not set; maps stay off."
+            { echo "needed=false"; echo "mode=none"; echo "version="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$MAP_TILES_VERSION" =~ ^[0-9]{8}$ ]]; then
+            echo "::error::MAP_TILES_VERSION_${TILES_ENV^^} must be 8 digits (YYYYMMDD), got '$MAP_TILES_VERSION'."
+            exit 1
+          fi
+          if [ -z "${GCS_MAP_TILES_BUCKET_PREFIX:-}" ]; then
+            echo "::error::Variable INFRA_GCS_MAP_TILES_BUCKET_PREFIX is not set."
+            exit 1
+          fi
+          echo "version=$MAP_TILES_VERSION" >> "$GITHUB_OUTPUT"
+
+          # Anonymous reads (the bucket is public); the query string and
+          # no-cache header keep a cached 404 or 200 from deciding.
+          ready_status() {
+            curl -s -o /dev/null -w '%{http_code}' -H 'Cache-Control: no-cache' \
+              "https://storage.googleapis.com/${GCS_MAP_TILES_BUCKET_PREFIX}-$1/v${MAP_TILES_VERSION}/_READY?t=${RUN_ID}"
+          }
+
+          status=$(ready_status "$TILES_ENV")
+          echo "_READY in -${TILES_ENV}/v${MAP_TILES_VERSION}: HTTP $status"
+          if [ "$status" = "200" ]; then
+            { echo "needed=false"; echo "mode=none"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$status" != "404" ]; then
+            echo "::error::Unexpected HTTP $status checking _READY."
+            exit 1
+          fi
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+
+          # Prod copies a verified dev folder rather than rebuilding: the
+          # upstream daily build may have expired by then.
+          if [ "$TILES_ENV" = "prod" ] && [ "$(ready_status dev)" = "200" ]; then
+            echo "mode=copy-from-dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=build" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.mode == 'build'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Build Map Tiles
+        if: steps.check.outputs.mode == 'build'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/map-tiles"
+          mkdir -p "$OUT"
+          scripts/build_map_tiles.sh "$VERSION" \
+            "https://storage.googleapis.com/${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}/v${VERSION}" "$OUT"
+
+      - name: Upload Map Tiles Artifact
+        if: steps.check.outputs.mode == 'build'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: map-tiles
+          path: ${{ runner.temp }}/map-tiles
+          if-no-files-found: error
+          retention-days: 1
+          # .pmtiles is already compressed.
+          compression-level: 0
 
   # =========================================================
   # SETUP GCS BUCKETS
@@ -225,30 +324,43 @@ jobs:
   setup-gcs-image-gcs-items:
     name: Setup GCS Buckets
     runs-on: ubuntu-latest
-    needs: [audit, lint-check, test-api, changes]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.image_worker == 'true' || needs.changes.outputs.backend == 'true')
+    needs: [audit, lint-check, test-api, changes, build-map-tiles]
+    # A failed tile build mustn't block the buckets or the image worker, so
+    # build-map-tiles is the one need allowed to fail (the portals then run
+    # with maps off). Unpublished tiles also bring this job up on their own.
+    if: >-
+      !cancelled()
+      && needs.audit.result == 'success' && needs.lint-check.result == 'success'
+      && needs.test-api.result == 'success' && needs.changes.result == 'success'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+          || needs.changes.outputs.image_worker == 'true' || needs.changes.outputs.backend == 'true'
+          || needs.build-map-tiles.outputs.needed == 'true')
     env:
       SA_IMAGE_WORKER: ${{ vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v3"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "$REF_NAME" == "main" ]]; then
             SAFE_SCHEMA_name="public"
           elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
@@ -310,6 +422,87 @@ jobs:
           gcloud storage buckets add-iam-policy-binding gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
             --member="serviceAccount:$SA_EMAIL" \
             --role="roles/storage.objectAdmin"
+      # listing_api signs the upload URLs (IAM signBlob as itself), and the
+      # browser's PUT is authorized as that service account.
+      - name: Grant Signed Upload Permissions to Listing API SA
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          SA_EMAIL="${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          echo "Granting storage.objectCreator to $SA_EMAIL on raw bucket..."
+          gcloud storage buckets add-iam-policy-binding gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/storage.objectCreator"
+
+          echo "Granting iam.serviceAccountTokenCreator to $SA_EMAIL on itself..."
+          gcloud iam service-accounts add-iam-policy-binding $SA_EMAIL \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/iam.serviceAccountTokenCreator" \
+            --quiet
+
+      # Map tiles (#103, spec §1.10). One bucket per environment, not per
+      # branch: every non-main branch shares -dev, and main uses -prod. It holds
+      # only public, versioned map data, so anyone may read it and CORS allows
+      # GET/HEAD from any origin. The settings are applied again on every run so
+      # they can't drift.
+      - name: Create Map Tiles Bucket
+        env:
+          TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GCS_MAP_TILES_BUCKET_PREFIX:-}" ]; then
+            echo "::error::Variable INFRA_GCS_MAP_TILES_BUCKET_PREFIX is not set."
+            exit 1
+          fi
+          TILES_BUCKET="gs://${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}"
+
+          echo "Checking if map tiles bucket $TILES_BUCKET exists..."
+          if ! gcloud storage buckets describe "$TILES_BUCKET" >/dev/null 2>&1; then
+            echo "Creating map tiles bucket..."
+            gcloud storage buckets create "$TILES_BUCKET" \
+              --location=us-east1 \
+              --default-storage-class=STANDARD \
+              --uniform-bucket-level-access \
+              --soft-delete-duration=0
+          else
+            echo "Map tiles bucket already exists."
+          fi
+
+          echo "Making map tiles bucket readable by allUsers..."
+          gcloud storage buckets update "$TILES_BUCKET" --no-public-access-prevention
+          gcloud storage buckets add-iam-policy-binding "$TILES_BUCKET" \
+            --member="allUsers" \
+            --role="roles/storage.objectViewer"
+
+          echo "Applying CORS (GET/HEAD from any origin; range reads by the map)..."
+          jq -n '[{origin: ["*"], method: ["GET", "HEAD"], responseHeader: ["Content-Range", "Content-Length", "ETag", "Accept-Ranges"], maxAgeSeconds: 86400}]' > map-tiles-cors.json
+          cat map-tiles-cors.json
+          gcloud storage buckets update "$TILES_BUCKET" --cors-file=map-tiles-cors.json
+
+      # Only this run's artifact, never one fetched by run-id.
+      - name: Download Map Tiles Artifact
+        if: needs.build-map-tiles.result == 'success' && needs.build-map-tiles.outputs.mode == 'build'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: map-tiles
+          path: ${{ runner.temp }}/map-tiles
+
+      - name: Upload Map Tiles
+        if: needs.build-map-tiles.result == 'success' && needs.build-map-tiles.outputs.needed == 'true'
+        env:
+          TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+          MODE: ${{ needs.build-map-tiles.outputs.mode }}
+          VERSION: ${{ needs.build-map-tiles.outputs.version }}
+        run: |
+          set -euo pipefail
+          TILES_BUCKET="${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}"
+          if [ "$MODE" = "copy-from-dev" ]; then
+            DEV_BUCKET="${GCS_MAP_TILES_BUCKET_PREFIX}-dev" \
+              scripts/upload_map_tiles.sh "$TILES_BUCKET" "$VERSION" --copy-from-dev
+          else
+            scripts/upload_map_tiles.sh "$TILES_BUCKET" "$VERSION" "$RUNNER_TEMP/map-tiles"
+          fi
+
       - name: Create PubSub Topic
         run: |
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
@@ -370,30 +563,34 @@ jobs:
       DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v3"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "$REF_NAME" == "main" ]]; then
             SAFE_SCHEMA_name="public"
           elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
@@ -412,13 +609,16 @@ jobs:
 
       - name: Deploy to Cloud Run
         id: deploy_image_worker
-        uses: google-github-actions/deploy-cloudrun@v3
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: ${{ env.SERVICE_PREFIX_IMAGE_WORKER }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_IMAGE_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -430,7 +630,7 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
             GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             GCS_PUBLIC_BUCKET=${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=1 --memory=1Gi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=4 --concurrency=2 --memory=1Gi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       - name: Grant Pub/Sub Service Account Invoker Permission
         run: |
@@ -464,6 +664,161 @@ jobs:
           fi
 
   # =========================================================
+  # DEPLOY EMAIL WORKER
+  # =========================================================
+  deploy-email-worker:
+    name: Build & Deploy Email Worker
+    runs-on: ubuntu-latest
+    needs: [audit, lint-check, test-api, changes]
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.email_worker == 'true')
+    env:
+      SA_EMAIL_WORKER: ${{ vars[format('INFRA_SA_EMAIL_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Configure Docker
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Sanitize Branch Name
+        id: branch_name
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "$REF_NAME" == "main" ]]; then
+            SAFE_SCHEMA_name="public"
+          elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
+            SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
+          fi
+          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+          echo "SCHEMA_NAME=$SAFE_SCHEMA_name" >> $GITHUB_OUTPUT
+
+      - name: Ensure PubSub Topic and Subscription Permissions
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          TOPIC_NAME="our-places-email-notifications-$SUFFIX"
+          SA_EMAIL="${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          if ! gcloud pubsub topics describe $TOPIC_NAME >/dev/null 2>&1; then
+            echo "Creating PubSub topic $TOPIC_NAME..."
+            gcloud pubsub topics create $TOPIC_NAME
+          else
+            echo "PubSub topic $TOPIC_NAME already exists."
+          fi
+
+          echo "Granting pubsub.subscriber role to $SA_EMAIL on topic $TOPIC_NAME..."
+          gcloud pubsub topics add-iam-policy-binding $TOPIC_NAME \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/pubsub.subscriber" \
+            --project=${{ env.PROJECT_ID }} \
+            --quiet || true
+
+          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format="value(projectNumber)")
+          PUBSUB_SERVICE_AGENT="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
+          echo "Granting roles/iam.serviceAccountTokenCreator to $PUBSUB_SERVICE_AGENT on $SA_EMAIL..."
+          gcloud iam service-accounts add-iam-policy-binding $SA_EMAIL \
+            --member="serviceAccount:$PUBSUB_SERVICE_AGENT" \
+            --role="roles/iam.serviceAccountTokenCreator" \
+            --quiet || true
+
+      - name: Build and push Docker image
+        run: |
+          docker buildx build \
+            --cache-from type=gha,scope=email-worker \
+            --cache-to type=gha,mode=max,scope=email-worker \
+            -f Dockerfile.email_worker \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_EMAIL_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
+            --push .
+
+      - name: Deploy to Cloud Run
+        id: deploy_email_worker
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
+        with:
+          service: ${{ env.SERVICE_PREFIX_EMAIL_WORKER }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_EMAIL_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
+            RUST_LOG=info
+            EA__SERVER__HOST=0.0.0.0
+            EA__SERVER__PORT=8080
+            EA__DATABASE__CLOUD=true
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}
+            EA__DATABASE__USERNAME=${{ env.DB_USER }}
+            EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
+            EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
+            EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+            SMTP_HOST=${{ env.SMTP_HOST }}
+            SMTP_PORT=587
+            SMTP_USERNAME=${{ env.SMTP_USER }}
+            SMTP_PASSWORD=${{ env.SMTP_PASS }}
+            SMTP_FROM_EMAIL=${{ env.SMTP_FROM }}
+            SMTP_USER=${{ env.SMTP_USER }}
+            SMTP_PASS=${{ env.SMTP_PASS }}
+            SMTP_FROM=${{ env.SMTP_FROM }}
+            USE_MOCK_EMAIL_PROVIDER=false
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+
+      - name: Grant Pub/Sub Service Account Invoker Permission
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          SA_EMAIL="${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          echo "Granting run.invoker to $SA_EMAIL for email-worker service..."
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_PREFIX_EMAIL_WORKER }}-$SUFFIX \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
+
+      - name: Configure the Subscription (Push to Email Worker)
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          WORKER_URL=$(gcloud run services describe ${{ env.SERVICE_PREFIX_EMAIL_WORKER }}-$SUFFIX --region ${{ env.REGION }} --format 'value(status.url)')
+
+          echo "Configuring subscription for $WORKER_URL..."
+          if gcloud pubsub subscriptions describe our-places-email-worker-sub-$SUFFIX >/dev/null 2>&1; then
+            gcloud pubsub subscriptions update our-places-email-worker-sub-$SUFFIX \
+              --push-endpoint=$WORKER_URL/pubsub/email-events \
+              --push-auth-service-account=${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --ack-deadline=60
+          else
+            gcloud pubsub subscriptions create our-places-email-worker-sub-$SUFFIX \
+              --topic=our-places-email-notifications-$SUFFIX \
+              --push-endpoint=$WORKER_URL/pubsub/email-events \
+              --push-auth-service-account=${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --ack-deadline=60
+          fi
+
+  # =========================================================
   # DEPLOY API
   # =========================================================
   deploy-api:
@@ -478,11 +833,21 @@ jobs:
       SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      # Calendar sync job (#58): a dedicated account, created once by hand (docs/ENVIRONMENT.md).
+      SA_CALENDAR_JOB: ${{ vars[format('INFRA_SA_CALENDAR_JOB_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       GCS_BUCKET_RAW_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
+      TAJ_SUPPLIER_TRN: ${{ vars[format('TAJ_SUPPLIER_TRN_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars.TAJ_SUPPLIER_TRN || '000-000-000' }}
+      TAJ_SUPPLIER_NAME: ${{ vars[format('TAJ_SUPPLIER_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars.TAJ_SUPPLIER_NAME || 'Our Places Jamaica Limited' }}
+      TAJ_SUPPLIER_ADDRESS: ${{ vars[format('TAJ_SUPPLIER_ADDRESS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars.TAJ_SUPPLIER_ADDRESS || 'Main Street, Ocho Rios, St. Ann, Jamaica' }}
+      CRON_SECRET: ${{ secrets[format('CRON_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || secrets.CRON_SECRET || 'dev-cron-secret' }}
+      JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      # Map view (#103, spec §1.4): fixes each approximate listing's offset. listing_api only.
+      LOCATION_OFFSET_KEY: ${{ secrets[format('LOCATION_OFFSET_KEY_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SYSTEM_ADMIN_PASSWORD: ${{ secrets[format('SYSTEM_ADMIN_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -496,30 +861,34 @@ jobs:
       user_url: ${{ steps.construct_urls.outputs.user_url }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v3"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "$REF_NAME" == "main" ]]; then
             SAFE_SCHEMA_name="public"
           elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
@@ -527,20 +896,61 @@ jobs:
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
           echo "SCHEMA_NAME=$SAFE_SCHEMA_name" >> $GITHUB_OUTPUT
 
+      - name: Require JWT Secret
+        run: |
+          if [ -z "$JWT_SECRET" ]; then
+            echo "::error::Secret JWT_SECRET_${{ env.ENV_SUFFIX }} is not set. The APIs would fall back to a public default and the portals refuse to start without it."
+            exit 1
+          fi
+
+      - name: Require Location Offset Key
+        run: |
+          if [ -z "$LOCATION_OFFSET_KEY" ]; then
+            echo "::error::Secret LOCATION_OFFSET_KEY_${{ env.ENV_SUFFIX }} is not set. listing_api refuses to start without it, and it must never change once set (docs/ENVIRONMENT.md)."
+            exit 1
+          fi
+
+      # CI never creates service accounts; the calendar job's is bootstrapped once by hand.
+      - name: Require Calendar Sync Job Service Account
+        run: |
+          if [ -z "$SA_CALENDAR_JOB" ]; then
+            ENV_LOWER=$(echo "${{ env.ENV_SUFFIX }}" | tr '[:upper:]' '[:lower:]')
+            echo "::error::Repository variable INFRA_SA_CALENDAR_JOB_${{ env.ENV_SUFFIX }} is not set. Bootstrap it once (docs/ENVIRONMENT.md, 'Calendar sync job'):"
+            echo "  gcloud iam service-accounts create sa-calendar-sync-job-$ENV_LOWER --display-name=\"Calendar sync job ($ENV_LOWER)\""
+            echo "  then grant roles/cloudsql.client, roles/pubsub.publisher on the email topic, and set INFRA_SA_CALENDAR_JOB_${{ env.ENV_SUFFIX }}=sa-calendar-sync-job-$ENV_LOWER"
+            exit 1
+          fi
+
+      # Every branch gets a fresh schema, so user_api creates the admin on first boot and refuses to start without this.
+      - name: Require System Admin Password
+        run: |
+          if [ ${#SYSTEM_ADMIN_PASSWORD} -lt 12 ]; then
+            echo "::error::Secret SYSTEM_ADMIN_PASSWORD_${{ env.ENV_SUFFIX }} is missing or shorter than 12 characters. user_api needs it to create the admin account."
+            exit 1
+          fi
+
+      # deploy-cloudrun splits env_vars on commas, so commas inside values must be escaped.
+      - name: Escape Env Values
+        run: echo "TAJ_SUPPLIER_ADDRESS_ESCAPED=${TAJ_SUPPLIER_ADDRESS//,/\\,}" >> $GITHUB_ENV
+
       - name: Get Project Number & Construct URLs
         id: construct_urls
+        env:
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          SERVICE_SUFFIX: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          REGION: ${{ env.REGION }}
         run: |
-          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format="value(projectNumber)")
-          SERVICE_SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          REGION=${{ env.REGION }}
+          PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
 
           echo "listing_url=https://listing-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
           echo "booking_url=https://booking-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
           echo "user_url=https://user-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
 
       - name: Set Build Arguments
+        env:
+          GITHUB_REF: ${{ github.ref }}
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
             echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
           else
@@ -549,7 +959,7 @@ jobs:
           fi
 
       - name: Install SQLX CLI
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: sqlx-cli
 
@@ -578,6 +988,25 @@ jobs:
 
           kill $PID
 
+      - name: Ensure Email Pub/Sub Topic and Publisher IAM
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          TOPIC_NAME="our-places-email-notifications-$SUFFIX"
+          if ! gcloud pubsub topics describe $TOPIC_NAME >/dev/null 2>&1; then
+            echo "Creating PubSub topic $TOPIC_NAME..."
+            gcloud pubsub topics create $TOPIC_NAME
+          else
+            echo "PubSub topic $TOPIC_NAME already exists."
+          fi
+          for SA in "${{ env.SA_BOOKING_API }}" "${{ env.SA_USER_API }}" "${{ env.SA_LISTING_API }}" "${{ env.SA_CALENDAR_JOB }}"; do
+            echo "Granting roles/pubsub.publisher to $SA on $TOPIC_NAME..."
+            gcloud pubsub topics add-iam-policy-binding $TOPIC_NAME \
+              --member="serviceAccount:$SA@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+              --role="roles/pubsub.publisher" \
+              --project=${{ env.PROJECT_ID }} \
+              --quiet || true
+          done
+
       # Booking API
       - name: Build and Push Booking API
         run: |
@@ -592,13 +1021,16 @@ jobs:
             --push ..
 
       - name: Deploy Booking API
-        uses: google-github-actions/deploy-cloudrun@v3
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: booking-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -608,7 +1040,14 @@ jobs:
             EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
             EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+            EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            TAJ_SUPPLIER_TRN=${{ env.TAJ_SUPPLIER_TRN }}
+            TAJ_SUPPLIER_NAME=${{ env.TAJ_SUPPLIER_NAME }}
+            TAJ_SUPPLIER_ADDRESS=${{ env.TAJ_SUPPLIER_ADDRESS_ESCAPED }}
+            CRON_SECRET=${{ env.CRON_SECRET }}
+            JWT_SECRET=${{ env.JWT_SECRET }}
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       # Listing API
       - name: Build and Push Listing API
@@ -625,13 +1064,16 @@ jobs:
 
       - name: Deploy Listing API
         id: deploy_listing
-        uses: google-github-actions/deploy-cloudrun@v3
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: listing-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -642,7 +1084,129 @@ jobs:
             EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
             GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+            JWT_SECRET=${{ env.JWT_SECRET }}
+            LOCATION_OFFSET_KEY=${{ env.LOCATION_OFFSET_KEY }}
+            EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS=false
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+
+      # Calendar sync job (#58): built and deployed on every branch. Non-prod
+      # environments sync by hand (gcloud run jobs execute, or "Sync now").
+      - name: Build and Push Calendar Sync Job
+        run: |
+          docker buildx build \
+            --cache-from type=gha,scope=calendar-sync-job \
+            --cache-to type=gha,mode=max,scope=calendar-sync-job \
+            --build-arg "RELEASE_FLAG=$RELEASE_FLAG" \
+            --build-arg "BUILD_OUTPUT=$BUILD_OUTPUT" \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/calendar-sync-job:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/calendar-sync-job:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
+            -f ../Dockerfile.calendar_sync_job \
+            --push ..
+
+      # The job gets the database and the email topic only: no user-token,
+      # storage or SMTP settings.
+      - name: Deploy Calendar Sync Job
+        env:
+          SUFFIX: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          SCHEMA_NAME: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
+        run: |
+          INSTANCE="${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}"
+          VARS=(
+            "LOG_FORMAT=json"
+            "RUST_LOG=info"
+            "GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}"
+            "TRACE_EXPORTER=gcp"
+            "EA__DATABASE__CLOUD=true"
+            "EA__DATABASE__INSTANCE_NAME=$INSTANCE"
+            "EA__DATABASE__USERNAME=${{ env.DB_USER }}"
+            "EA__DATABASE__PASSWORD=${{ env.DB_PASS }}"
+            "EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME }}"
+            "EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/$INSTANCE&options=-c%20search_path%3D$SCHEMA_NAME"
+            "EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-$SUFFIX"
+            "GCP_PROJECT_ID=${{ env.PROJECT_ID }}"
+            "EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS=false"
+          )
+          # gcloud's ^##^ delimiter: the database URL contains commas and @.
+          ENV_ARG="^##^"
+          for V in "${VARS[@]}"; do ENV_ARG+="$V##"; done
+          ENV_ARG=${ENV_ARG%##}
+          gcloud run jobs deploy "calendar-sync-$SUFFIX" \
+            --image "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/calendar-sync-job:${{ github.sha }}" \
+            --region "${{ env.REGION }}" \
+            --service-account "${{ env.SA_CALENDAR_JOB }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --set-cloudsql-instances "$INSTANCE" \
+            --set-env-vars "$ENV_ARG" \
+            --task-timeout=600s --max-retries=0 --memory=512Mi --cpu=1 --quiet
+
+      # Cloud Scheduler free tier: sweeps (dev and main) plus calendar sync (main) = 3.
+      - name: Schedule Calendar Sync
+        if: github.ref == 'refs/heads/main'
+        env:
+          SUFFIX: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+        run: |
+          JOB="calendar-sync-$SUFFIX"
+          SA_EMAIL="${{ env.SA_CALENDAR_JOB }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+          gcloud run jobs add-iam-policy-binding "$JOB" \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
+          COMMON=(
+            --location=${{ env.REGION }}
+            --schedule="*/15 * * * *"
+            --time-zone="UTC"
+            --uri="https://run.googleapis.com/v2/projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/jobs/$JOB:run"
+            --http-method=POST
+            --oauth-service-account-email="$SA_EMAIL"
+            --attempt-deadline=60s
+            --max-retry-attempts=0
+          )
+          if gcloud scheduler jobs describe "$JOB" --location=${{ env.REGION }} >/dev/null 2>&1; then
+            gcloud scheduler jobs update http "$JOB" "${COMMON[@]}"
+          else
+            gcloud scheduler jobs create http "$JOB" "${COMMON[@]}"
+          fi
+
+      # One hourly Cloud Scheduler sweep job per long-lived environment (dev,
+      # main). With the calendar sync on main: sweeps (dev and main) plus
+      # calendar sync (main) = 3, the free tier per billing account.
+      # Feature branches get none; trigger /run-sweeps by hand there if needed.
+      - name: Schedule Hourly Booking Sweeps
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          SUFFIX: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          BOOKING_URL: ${{ steps.construct_urls.outputs.booking_url }}
+        run: |
+          JOB="our-places-sweeps-$SUFFIX"
+          SA_EMAIL="${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          # The job calls booking_api with an OIDC token for this service account.
+          gcloud run services add-iam-policy-binding booking-api-$SUFFIX \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
+
+          COMMON=(
+            --location=${{ env.REGION }}
+            --schedule="5 * * * *"
+            --time-zone="UTC"
+            --uri="$BOOKING_URL/api/v1/internal/cron/run-sweeps"
+            --http-method=POST
+            --oidc-service-account-email="$SA_EMAIL"
+            --oidc-token-audience="$BOOKING_URL"
+            --attempt-deadline=320s
+            --max-retry-attempts=3
+          )
+          if gcloud scheduler jobs describe "$JOB" --location=${{ env.REGION }} >/dev/null 2>&1; then
+            gcloud scheduler jobs update http "$JOB" "${COMMON[@]}" \
+              --update-headers="x-cron-secret=$CRON_SECRET,Content-Type=application/json"
+          else
+            gcloud scheduler jobs create http "$JOB" "${COMMON[@]}" \
+              --headers="x-cron-secret=$CRON_SECRET,Content-Type=application/json"
+          fi
 
       # User API
       - name: Build and Push User API
@@ -657,48 +1221,59 @@ jobs:
             --push ..
 
       - name: Deploy User API
-        uses: google-github-actions/deploy-cloudrun@v3
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: user-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
-            EA__DATABASE__CLOUD=true
             EA__DATABASE__CLOUD=true
             EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}
             EA__DATABASE__USERNAME=${{ env.DB_USER }}
             EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
             EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+            EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            JWT_SECRET=${{ env.JWT_SECRET }}
+            SYSTEM_ADMIN_PASSWORD=${{ env.SYSTEM_ADMIN_PASSWORD }}
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
 
   # =========================================================
-  # DEPLOY WEBAPP TOPCOAT
+  # DEPLOY WEB UI GUEST PORTAL (web_ui_guest)
   # =========================================================
-  deploy-web-tc:
-    name: Build & Deploy WebApp Topcoat
+  deploy-web-ui-guest:
+    name: Build & Deploy Web UI Guest
     runs-on: ubuntu-latest
-    needs: [deploy-api, test-web-tc, changes]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp_tc == 'true')
+    needs: [deploy-api, test-web-ui, changes, setup-gcs-image-gcs-items, build-map-tiles]
+    # The setup job may be skipped (portal-only push); a failed setup or tile
+    # build blocks the deploy (spec 103 §1.10). Wrapped in ${{ }} because a
+    # bare `!` starts a YAML tag.
+    if: >-
+      ${{ !cancelled()
+      && needs.deploy-api.result == 'success' && needs.test-web-ui.result == 'success'
+      && needs.changes.result == 'success'
+      && needs.setup-gcs-image-gcs-items.result != 'failure' && needs.build-map-tiles.result != 'failure'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.web_ui_guest == 'true') }}
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      GATEWAY_KEY: ${{ secrets[format('INFRA_GATEWAY_API_KEY_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      # Custom domain (e.g. https://ourplaces.io) on main and dev only; feature
+      # branches use their own Cloud Run URL (spec 102 §1.9, D9).
+      PUBLIC_URL: ${{ github.ref == 'refs/heads/main' && vars.GUEST_PORTAL_URL_PROD || (github.ref == 'refs/heads/dev' && vars.GUEST_PORTAL_URL_DEV || '') }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+      # The origin the guest serves canonical and sitemap URLs from.
+      public_url: ${{ steps.reconcile_url.outputs.url }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -706,162 +1281,223 @@ jobs:
       pull-requests: "write"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Require JWT Secret
+        run: |
+          if [ -z "$JWT_SECRET" ]; then
+            echo "::error::Secret JWT_SECRET_${{ env.ENV_SUFFIX }} is not set; web_ui_guest refuses to start without it."
+            exit 1
+          fi
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v3"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      # MAP_TILES_BASE_URL only for the configured version, only when its
+      # _READY exists and the .pmtiles crc32c matches it; otherwise empty
+      # (maps off). There is no fallback to an older version.
+      - name: Resolve Map Tiles
+        id: map_tiles
+        env:
+          TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+          VERSION: ${{ github.ref == 'refs/heads/main' && vars.MAP_TILES_VERSION_PROD || vars.MAP_TILES_VERSION_DEV }}
+        run: |
+          set -euo pipefail
+          url=""
+          if [ -z "${VERSION:-}" ]; then
+            echo "::notice::MAP_TILES_VERSION_${TILES_ENV^^} is not set; maps are off."
+          elif ! [[ "$VERSION" =~ ^[0-9]{8}$ ]]; then
+            echo "::warning::MAP_TILES_VERSION_${TILES_ENV^^} is not 8 digits; maps are off."
+          else
+            bucket="${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}"
+            prefix="gs://${bucket}/v${VERSION}"
+            if ready=$(gcloud storage cat "$prefix/_READY" 2>/dev/null); then
+              want=$(jq -r '.pmtiles_crc32c // empty' <<<"$ready")
+              have=$(gcloud storage objects describe "$prefix/jamaica.pmtiles" --format='value(crc32c_hash)' 2>/dev/null || true)
+              if [ -n "$want" ] && [ "$want" = "$have" ]; then
+                url="https://storage.googleapis.com/${bucket}/v${VERSION}"
+              else
+                echo "::warning::$prefix/jamaica.pmtiles crc32c '$have' doesn't match _READY '$want'; maps are off."
+              fi
+            else
+              echo "::warning::$prefix/_READY is missing; maps are off."
+            fi
+          fi
+          echo "Map tiles: ${url:-off}"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          SERVICE_PREFIX: ${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SERVICE_NAME="${{ env.SERVICE_PREFIX_TC }}-$SAFE_BRANCH_slug"
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
-          echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "SERVICE_NAME=${SERVICE_PREFIX}-$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+
+      # Spec 102 §1.9: web_ui_guest refuses to start without GUEST_PORTAL_URL.
+      # main and dev use their custom URL; other branches their own Cloud Run
+      # URL in its deterministic form, checked after the deploy. Values reach
+      # the script only through env (no ${{ }} inside run).
+      - name: Resolve Public URL
+        id: public_url
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          SERVICE_NAME: ${{ steps.branch_name.outputs.SERVICE_NAME }}
+        run: |
+          if [[ "$GITHUB_REF" == "refs/heads/main" || "$GITHUB_REF" == "refs/heads/dev" ]]; then
+            URL="$PUBLIC_URL"
+            if [ -z "$URL" ]; then
+              echo "::error::Variable GUEST_PORTAL_URL_$ENV_SUFFIX is not set; web_ui_guest refuses to start without it."
+              exit 1
+            fi
+          else
+            PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+            URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
+          fi
+          if [[ "$URL" =~ [[:space:],] ]]; then
+            echo "::error::The guest public URL contains whitespace or a comma."
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Set Release Flag
+        env:
+          GITHUB_REF: ${{ github.ref }}
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
           else
             echo "RELEASE_FLAG=" >> $GITHUB_ENV
           fi
 
-      - name: Fetch Gateway URL
-        id: fetch_gateway
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            GATEWAY_ID="our-places-app-api-gw-prod"
-          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
-            GATEWAY_ID="our-places-app-api-gw"
-          fi
-
-          echo "Fetching URL for Gateway: $GATEWAY_ID"
-            
-          gcloud api-gateway gateways describe $GATEWAY_ID \
-            --location=us-central1 \
-            --project=our-places-dev \
-            --format="value(defaultHostname)" > gateway_url.txt
-              
-          echo "GATEWAY_URL=https://$(cat gateway_url.txt)" >> $GITHUB_OUTPUT
-
-      - name: Build and Push Web App Topcoat
+      - name: Build and Push Web UI Guest
         run: |
           docker buildx build \
-            --cache-from type=gha,scope=web-app-tc \
-            --cache-to type=gha,mode=max,scope=web-app-tc \
+            --cache-from type=gha,scope=web-ui-guest \
+            --cache-to type=gha,mode=max,scope=web-ui-guest \
             --build-arg RELEASE_FLAG=$RELEASE_FLAG \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_TC }}:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_TC }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
-            -f web_app_tc/Dockerfile.web_app_tc \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
+            -f Dockerfile.web_ui_guest \
             --push .
 
       - name: Grant Service Permissions
         run: |
-          # Grant Web App SA permission to invoke the Backend APIs
+          # Grant the portal SA permission to invoke the backend APIs (Cloud Run IAM)
           WEB_APP_SA_EMAIL="${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
           SUFFIX="${{ needs.deploy-api.outputs.service_suffix }}"
+          for API in listing-api booking-api user-api; do
+            echo "Granting run.invoker to $WEB_APP_SA_EMAIL on $API-$SUFFIX"
+            gcloud run services add-iam-policy-binding $API-$SUFFIX \
+              --region=${{ env.REGION }} \
+              --member="serviceAccount:$WEB_APP_SA_EMAIL" \
+              --role="roles/run.invoker" \
+              --quiet
+          done
 
-          echo "Granting run.invoker to $WEB_APP_SA_EMAIL for $SUFFIX services"
-
-          gcloud run services add-iam-policy-binding listing-api-$SUFFIX \
-            --region=${{ env.REGION }} \
-            --member="serviceAccount:$WEB_APP_SA_EMAIL" \
-            --role="roles/run.invoker" \
-            --quiet
-
-          gcloud run services add-iam-policy-binding booking-api-$SUFFIX \
-            --region=${{ env.REGION }} \
-            --member="serviceAccount:$WEB_APP_SA_EMAIL" \
-            --role="roles/run.invoker" \
-            --quiet
-
-          gcloud run services add-iam-policy-binding user-api-$SUFFIX \
-            --region=${{ env.REGION }} \
-            --member="serviceAccount:$WEB_APP_SA_EMAIL" \
-            --role="roles/run.invoker" \
-            --quiet
-
-      - name: Deploy Web App Topcoat
-        id: deploy_webapp_tc
-        uses: google-github-actions/deploy-cloudrun@v3
+      # The portal calls the APIs' Cloud Run URLs directly on every branch: it
+      # sends its service account's ID token for Cloud Run IAM and the user's
+      # JWT in X-Forwarded-Authorization. (The API Gateway spec does not cover
+      # the routes the portals use.)
+      - name: Deploy Web UI Guest
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: ${{ steps.branch_name.outputs.SERVICE_NAME }}
-          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_TC }}:${{ github.sha }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             HOST=0.0.0.0
-            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
-            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
+            ENABLE_HSTS=true
+            JWT_SECRET=${{ env.JWT_SECRET }}
+            LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_URL=${{ needs.deploy-api.outputs.booking_url }}
+            USER_API_URL=${{ needs.deploy-api.outputs.user_url }}
             LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
             BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
-            GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
-            SMTP_HOST=${{ env.SMTP_HOST }}
-            SMTP_USER=${{ env.SMTP_USER }}
-            SMTP_PASS=${{ env.SMTP_PASS }}
-            SMTP_FROM=${{ env.SMTP_FROM }}
-            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
-          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+            MAP_TILES_BASE_URL=${{ steps.map_tiles.outputs.url }}
+            GUEST_PORTAL_URL=${{ steps.public_url.outputs.url }}
+            SEO_INDEXABLE=${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=4 --memory=512Mi --quiet"
 
-      - name: Show Deployed URL for the Web App Topcoat
-        run: echo "Deployed Web App Topcoat URL ${{ steps.deploy_webapp_tc.outputs.url }}"
+      # Long branch names exceed the 63-character DNS label, so Cloud Run
+      # issues no deterministic URL; then point GUEST_PORTAL_URL at the URL
+      # it did issue (spec 102 §1.9.3).
+      - name: Reconcile Public URL
+        id: reconcile_url
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          SERVICE_NAME: ${{ steps.branch_name.outputs.SERVICE_NAME }}
+          RESOLVED_URL: ${{ steps.public_url.outputs.url }}
+        run: |
+          URL="$RESOLVED_URL"
+          if [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF" != "refs/heads/dev" ]]; then
+            DESC=$(gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format=json)
+            ISSUED=$(echo "$DESC" | jq -r '[.status.url] + (.metadata.annotations["run.googleapis.com/urls"] // "[]" | try fromjson catch []) | .[]')
+            echo "Issued URLs:"; echo "$ISSUED"
+            if ! grep -qxF "$URL" <<<"$ISSUED"; then
+              STATUS_URL=$(echo "$DESC" | jq -r '.status.url')
+              echo "::warning::Cloud Run did not issue $URL for $SERVICE_NAME; setting GUEST_PORTAL_URL to $STATUS_URL."
+              gcloud run services update "$SERVICE_NAME" --region "$REGION" \
+                --update-env-vars "GUEST_PORTAL_URL=$STATUS_URL" --quiet
+              URL="$STATUS_URL"
+            fi
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
 
-      - name: Comment on PR
-        uses: actions/github-script@v6
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            const branch = '${{ steps.branch_name.outputs.SERVICE_SUFFIX }}';
-            const webappUrl = '${{ steps.deploy_webapp_tc.outputs.url }}';
-            const listingUrl = '${{ needs.deploy-api.outputs.listing_url }}';
-            const bookingUrl = '${{ needs.deploy-api.outputs.booking_url }}';
-            const userUrl = '${{ needs.deploy-api.outputs.user_url }}';
-            const schemaName = '${{ needs.deploy-api.outputs.schema_name }}';
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `🚀 **Topcoat Web App Preview Deployed!**\n\n- **Branch:** \`${branch}\`\n- **Topcoat Web App:** [${webappUrl}](${webappUrl})\n- **Listing API:** [${listingUrl}](${listingUrl})\n- **Booking API:** [${bookingUrl}](${bookingUrl})\n- **User API:** [${userUrl}](${userUrl})\n- **Database Schema:** \`${schemaName}\`\n\nAll services are up and connected!`
-            });
+      - name: Show Deployed URL for the Web UI Guest
+        run: echo "Deployed Web UI Guest URL ${{ steps.deploy.outputs.url }}"
 
   # =========================================================
-  # DEPLOY WEBAPP ADMIN TOPCOAT
+  # DEPLOY WEB UI ADMIN PORTAL (web_ui_admin)
   # =========================================================
-  deploy-admin-tc:
-    name: Build & Deploy WebApp Admin Topcoat
+  deploy-web-ui-admin:
+    name: Build & Deploy Web UI Admin
     runs-on: ubuntu-latest
-    needs: [deploy-api, test-web-admin-tc, changes]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp_admin_tc == 'true')
+    needs: [deploy-api, test-web-ui, changes, setup-gcs-image-gcs-items, build-map-tiles]
+    # The setup job may be skipped (portal-only push); a failed setup or tile
+    # build blocks the deploy (spec 103 §1.10). Wrapped in ${{ }} because a
+    # bare `!` starts a YAML tag.
+    if: >-
+      ${{ !cancelled()
+      && needs.deploy-api.result == 'success' && needs.test-web-ui.result == 'success'
+      && needs.changes.result == 'success'
+      && needs.setup-gcs-image-gcs-items.result != 'failure' && needs.build-map-tiles.result != 'failure'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.web_ui_admin == 'true') }}
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      GATEWAY_KEY: ${{ secrets[format('INFRA_GATEWAY_API_KEY_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      # Custom domain (e.g. https://admin.ourplaces.io) on main and dev only;
+      # allowed by the bucket CORS rule.
+      PUBLIC_URL: ${{ github.ref == 'refs/heads/main' && vars.ADMIN_PORTAL_URL_PROD || (github.ref == 'refs/heads/dev' && vars.ADMIN_PORTAL_URL_DEV || '') }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+      # The custom domain, else this run's service URL.
+      public_url: ${{ steps.admin_public_url.outputs.url }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -869,110 +1505,243 @@ jobs:
       pull-requests: "write"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Require JWT Secret
+        run: |
+          if [ -z "$JWT_SECRET" ]; then
+            echo "::error::Secret JWT_SECRET_${{ env.ENV_SUFFIX }} is not set; web_ui_admin refuses to start without it."
+            exit 1
+          fi
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v3"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      # MAP_TILES_BASE_URL only for the configured version, only when its
+      # _READY exists and the .pmtiles crc32c matches it; otherwise empty
+      # (maps off). There is no fallback to an older version.
+      - name: Resolve Map Tiles
+        id: map_tiles
+        env:
+          TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+          VERSION: ${{ github.ref == 'refs/heads/main' && vars.MAP_TILES_VERSION_PROD || vars.MAP_TILES_VERSION_DEV }}
+        run: |
+          set -euo pipefail
+          url=""
+          if [ -z "${VERSION:-}" ]; then
+            echo "::notice::MAP_TILES_VERSION_${TILES_ENV^^} is not set; maps are off."
+          elif ! [[ "$VERSION" =~ ^[0-9]{8}$ ]]; then
+            echo "::warning::MAP_TILES_VERSION_${TILES_ENV^^} is not 8 digits; maps are off."
+          else
+            bucket="${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}"
+            prefix="gs://${bucket}/v${VERSION}"
+            if ready=$(gcloud storage cat "$prefix/_READY" 2>/dev/null); then
+              want=$(jq -r '.pmtiles_crc32c // empty' <<<"$ready")
+              have=$(gcloud storage objects describe "$prefix/jamaica.pmtiles" --format='value(crc32c_hash)' 2>/dev/null || true)
+              if [ -n "$want" ] && [ "$want" = "$have" ]; then
+                url="https://storage.googleapis.com/${bucket}/v${VERSION}"
+              else
+                echo "::warning::$prefix/jamaica.pmtiles crc32c '$have' doesn't match _READY '$want'; maps are off."
+              fi
+            else
+              echo "::warning::$prefix/_READY is missing; maps are off."
+            fi
+          fi
+          echo "Map tiles: ${url:-off}"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          SERVICE_PREFIX: ${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SERVICE_NAME_ADMIN="${{ env.SERVICE_PREFIX_ADMIN_TC }}-$SAFE_BRANCH_slug"
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
-          echo "SERVICE_NAME_ADMIN=$SERVICE_NAME_ADMIN" >> $GITHUB_OUTPUT
+          echo "SERVICE_NAME=${SERVICE_PREFIX}-$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
 
       - name: Set Release Flag
+        env:
+          GITHUB_REF: ${{ github.ref }}
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
           else
             echo "RELEASE_FLAG=" >> $GITHUB_ENV
           fi
 
-      - name: Fetch Gateway URL
-        id: fetch_gateway
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            GATEWAY_ID="our-places-app-api-gw-prod"
-          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
-            GATEWAY_ID="our-places-app-api-gw"
-          fi
-
-          echo "Fetching URL for Gateway: $GATEWAY_ID"
-            
-          gcloud api-gateway gateways describe $GATEWAY_ID \
-            --location=us-central1 \
-            --project=our-places-dev \
-            --format="value(defaultHostname)" > gateway_url.txt
-              
-          echo "GATEWAY_URL=https://$(cat gateway_url.txt)" >> $GITHUB_OUTPUT
-
-      - name: Build and Push Web App Admin Topcoat
+      - name: Build and Push Web UI Admin
         run: |
           docker buildx build \
-            --cache-from type=gha,scope=web-app-admin-tc \
-            --cache-to type=gha,mode=max,scope=web-app-admin-tc \
+            --cache-from type=gha,scope=web-ui-admin \
+            --cache-to type=gha,mode=max,scope=web-ui-admin \
             --build-arg RELEASE_FLAG=$RELEASE_FLAG \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN_TC }}:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN_TC }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
-            -f web_app_admin_tc/Dockerfile.web_app_admin_tc \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
+            -f Dockerfile.web_ui_admin \
             --push .
 
-      - name: Deploy Web App Admin Topcoat
-        id: deploy_webapp_admin_tc
-        uses: google-github-actions/deploy-cloudrun@v3
+      - name: Grant Service Permissions
+        run: |
+          # Grant the portal SA permission to invoke the backend APIs (Cloud Run IAM)
+          WEB_APP_SA_EMAIL="${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+          SUFFIX="${{ needs.deploy-api.outputs.service_suffix }}"
+          for API in listing-api booking-api user-api; do
+            echo "Granting run.invoker to $WEB_APP_SA_EMAIL on $API-$SUFFIX"
+            gcloud run services add-iam-policy-binding $API-$SUFFIX \
+              --region=${{ env.REGION }} \
+              --member="serviceAccount:$WEB_APP_SA_EMAIL" \
+              --role="roles/run.invoker" \
+              --quiet
+          done
+
+      # The portal calls the APIs' Cloud Run URLs directly on every branch: it
+      # sends its service account's ID token for Cloud Run IAM and the user's
+      # JWT in X-Forwarded-Authorization. (The API Gateway spec does not cover
+      # the routes the portals use.)
+      - name: Deploy Web UI Admin
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
-          service: ${{ steps.branch_name.outputs.SERVICE_NAME_ADMIN }}
-          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN_TC }}:${{ github.sha }}
+          service: ${{ steps.branch_name.outputs.SERVICE_NAME }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             HOST=0.0.0.0
-            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
-            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
+            ENABLE_HSTS=true
+            JWT_SECRET=${{ env.JWT_SECRET }}
+            LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_URL=${{ needs.deploy-api.outputs.booking_url }}
+            USER_API_URL=${{ needs.deploy-api.outputs.user_url }}
             LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
             BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
-            GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
-            SMTP_HOST=${{ env.SMTP_HOST }}
-            SMTP_USER=${{ env.SMTP_USER }}
-            SMTP_PASS=${{ env.SMTP_PASS }}
-            SMTP_FROM=${{ env.SMTP_FROM }}
-            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
-          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+            MAP_TILES_BASE_URL=${{ steps.map_tiles.outputs.url }}
+          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=4 --memory=512Mi --quiet"
 
-      - name: Show Deployed URL for the Web App Admin Topcoat
-        run: echo "Deployed Web App Admin Topcoat URL ${{ steps.deploy_webapp_admin_tc.outputs.url }}"
+      # The admin portal uploads listing photos from the browser straight to
+      # the raw bucket with signed URLs, so the bucket must allow its origin.
+      - name: Allow Portal Origin on Raw Image Bucket (CORS)
+        env:
+          PORTAL_URL: ${{ steps.deploy.outputs.url }}
+          RAW_BUCKET: ${{ env.GCS_RAW_BUCKET_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+        run: |
+          ORIGINS=$(jq -cn --arg a "$PORTAL_URL" --arg b "$PUBLIC_URL" '[$a, $b] | map(select(. != "")) | unique')
+          jq -n --argjson origins "$ORIGINS" '[{origin: $origins, method: ["PUT"], responseHeader: ["Content-Type", "x-goog-meta-traceparent"], maxAgeSeconds: 3600}]' > cors.json
+          cat cors.json
+          gcloud storage buckets update "gs://$RAW_BUCKET" --cors-file=cors.json
 
-      - name: Comment Admin URL on PR
-        uses: actions/github-script@v6
-        if: github.event_name == 'pull_request'
+      - name: Resolve Public URL
+        id: admin_public_url
+        env:
+          DEPLOYED_URL: ${{ steps.deploy.outputs.url }}
+        run: echo "url=${PUBLIC_URL:-$DEPLOYED_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Show Deployed URL for the Web UI Admin
+        run: echo "Deployed Web UI Admin URL ${{ steps.deploy.outputs.url }}"
+
+  # =========================================================
+  # POINT EMAIL LINKS AT THE PORTALS
+  # =========================================================
+  # booking_api builds the links in emails from BASE_URL (guest portal) and
+  # ADMIN_BASE_URL (admin portal). One job sets both, after both portals.
+  configure-email-links:
+    name: Configure Email Links
+    runs-on: ubuntu-latest
+    needs: [deploy-api, deploy-web-ui-guest, deploy-web-ui-admin]
+    if: always() && needs.deploy-api.result == 'success'
+    env:
+      SUFFIX: ${{ needs.deploy-api.outputs.service_suffix }}
+      # The portals' public URLs from this run (spec 102 §1.9.5); empty when
+      # a portal was skipped, then looked up below.
+      GUEST_URL: ${{ needs.deploy-web-ui-guest.outputs.public_url }}
+      ADMIN_URL: ${{ needs.deploy-web-ui-admin.outputs.public_url }}
+    steps:
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
-          script: |
-            const branch = '${{ steps.branch_name.outputs.SERVICE_SUFFIX }}';
-            const adminUrl = '${{ steps.deploy_webapp_admin_tc.outputs.url }}';
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `👑 **Topcoat Admin Portal Preview Deployed!**\n\n- **Branch:** \`${branch}\`\n- **Admin App:** [${adminUrl}](${adminUrl})`
-            });
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
+      - name: Set BASE_URL and ADMIN_BASE_URL on Booking API
+        run: |
+          # A portal skipped in this run keeps its existing service URL.
+          lookup() {
+            gcloud run services describe "$1" --region ${{ env.REGION }} --format 'value(status.url)' 2>/dev/null || true
+          }
+          # The guest's own canonical origin, so links match its sitemap.
+          lookup_guest() {
+            gcloud run services describe "$1" --region "${{ env.REGION }}" --format=json 2>/dev/null \
+              | jq -r '.spec.template.spec.containers[0].env[]? | select(.name == "GUEST_PORTAL_URL") | .value' || true
+          }
+          GUEST_URL=${GUEST_URL:-$(lookup_guest "${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}-$SUFFIX")}
+          GUEST_URL=${GUEST_URL:-$(lookup ${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}-$SUFFIX)}
+          ADMIN_URL=${ADMIN_URL:-$(lookup ${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}-$SUFFIX)}
+
+          CURRENT=$(gcloud run services describe booking-api-$SUFFIX --region ${{ env.REGION }} --format=json \
+            | jq -r '[.spec.template.spec.containers[0].env[]? | {(.name): .value}] | add // {}')
+          UPDATES=()
+          for PAIR in "BASE_URL=$GUEST_URL" "ADMIN_BASE_URL=$ADMIN_URL"; do
+            NAME=${PAIR%%=*}; VALUE=${PAIR#*=}
+            if [ -n "$VALUE" ] && [ "$(echo "$CURRENT" | jq -r --arg n "$NAME" '.[$n] // ""')" != "$VALUE" ]; then
+              UPDATES+=("$PAIR")
+            fi
+          done
+
+          if [ ${#UPDATES[@]} -eq 0 ]; then
+            echo "Email links already up to date (BASE_URL=$GUEST_URL, ADMIN_BASE_URL=$ADMIN_URL)."
+          else
+            echo "Updating booking-api-$SUFFIX: ${UPDATES[*]}"
+            gcloud run services update booking-api-$SUFFIX --region ${{ env.REGION }} \
+              --update-env-vars "$(IFS=,; echo "${UPDATES[*]}")" --quiet
+          fi
+
+      # Calendar sync (#58): conflict emails link to the admin portal, and the
+      # admin calendar page shows the guest portal's export link.
+      - name: Set Calendar Portal Links
+        run: |
+          lookup() {
+            gcloud run services describe "$1" --region "${{ env.REGION }}" --format 'value(status.url)' 2>/dev/null || true
+          }
+          lookup_guest() {
+            gcloud run services describe "$1" --region "${{ env.REGION }}" --format=json 2>/dev/null \
+              | jq -r '.spec.template.spec.containers[0].env[]? | select(.name == "GUEST_PORTAL_URL") | .value' || true
+          }
+          GUEST_URL=${GUEST_URL:-$(lookup_guest "${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}-$SUFFIX")}
+          GUEST_URL=${GUEST_URL:-$(lookup "${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}-$SUFFIX")}
+          ADMIN_URL=${ADMIN_URL:-$(lookup "${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}-$SUFFIX")}
+          if [ -n "$ADMIN_URL" ]; then
+            gcloud run services update "listing-api-$SUFFIX" --region "${{ env.REGION }}" \
+              --update-env-vars "ADMIN_BASE_URL=$ADMIN_URL" --quiet
+            gcloud run services update "user-api-$SUFFIX" --region "${{ env.REGION }}" \
+              --update-env-vars "ADMIN_BASE_URL=$ADMIN_URL" --quiet || echo "User API not deployed in this run."
+            gcloud run jobs update "calendar-sync-$SUFFIX" --region "${{ env.REGION }}" \
+              --update-env-vars "ADMIN_BASE_URL=$ADMIN_URL" --quiet || echo "Calendar sync job not deployed in this run."
+          fi
+          if [ -n "$GUEST_URL" ]; then
+            gcloud run services update "${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}-$SUFFIX" --region "${{ env.REGION }}" \
+              --update-env-vars "GUEST_PORTAL_URL=$GUEST_URL" --quiet || echo "Admin portal not deployed for this branch."
+          fi

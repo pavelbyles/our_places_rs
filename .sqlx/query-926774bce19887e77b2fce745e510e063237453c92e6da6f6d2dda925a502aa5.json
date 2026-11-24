@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            t.id,\n            t.listing_id,\n            l.name AS listing_name,\n            l.city AS listing_city,\n            l.listing_details->'policies'->>'check_in' AS checkin_policy_text,\n            l.listing_details->'policies'->>'check_out' AS checkout_policy_text,\n            t.source_kind,\n            t.checkout_date,\n            (\n                SELECT MIN(nx.start_date)\n                FROM (\n                    SELECT b.date_from AS start_date\n                    FROM booking b\n                    WHERE b.listing_id = t.listing_id\n                      AND b.id IS DISTINCT FROM t.booking_id\n                      AND b.date_from >= t.checkout_date\n                      AND (\n                          b.status IN ('confirmed', 'completed')\n                          OR (b.status = 'pending' AND b.expires_at > NOW())\n                      )\n                    UNION ALL\n                    SELECT bd.date_from AS start_date\n                    FROM listing_blocked_dates bd\n                    WHERE bd.listing_id = t.listing_id\n                      AND bd.id IS DISTINCT FROM t.blocked_date_id\n                      AND bd.date_from >= t.checkout_date\n                ) nx\n            ) AS next_checkin_date,\n            t.status,\n            t.title,\n            (SELECT COUNT(*) FROM turnover_comment tc WHERE tc.turnover_id = t.id) AS \"comment_count!\",\n            t.updated_at\n        FROM turnover t\n        INNER JOIN listing l ON l.id = t.listing_id\n        WHERE l.deleted_at IS NULL\n          AND ($1::uuid IS NULL OR t.listing_id = $1)\n          AND ($2::text IS NULL OR t.status = $2)\n          AND (\n              $3 = 'all'\n              OR ($3 = 'today' AND t.checkout_date = $4)\n              OR ($3 = 'upcoming' AND t.checkout_date > $4)\n              OR ($3 = 'past' AND t.checkout_date < $4)\n          )\n          AND (\n              $5 = 'admin'\n              OR ($5 = 'host' AND l.user_id = $6)\n              OR EXISTS (\n                  SELECT 1\n                  FROM listing_staff ls\n                  INNER JOIN \"user\" u ON u.id = ls.staff_user_id\n                  WHERE ls.listing_id = l.id\n                    AND ls.staff_user_id = $6\n                    AND ($5 = 'staff' OR 'staff'::user_role = ANY(u.roles))\n                    AND u.is_active = TRUE\n                    AND u.deleted_at IS NULL\n              )\n          )\n        ORDER BY\n            CASE WHEN $3 = 'past' THEN t.checkout_date END DESC,\n            CASE WHEN $3 <> 'past' THEN t.checkout_date END ASC,\n            l.name ASC,\n            t.id ASC\n        LIMIT $7 OFFSET $8\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "listing_city",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "checkin_policy_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "checkout_policy_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "source_kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "checkout_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "next_checkin_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "comment_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Date",
+        "Text",
+        "Uuid",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null,
+      null,
+      false,
+      false,
+      null,
+      false,
+      true,
+      null,
+      false
+    ]
+  },
+  "hash": "926774bce19887e77b2fce745e510e063237453c92e6da6f6d2dda925a502aa5"
+}

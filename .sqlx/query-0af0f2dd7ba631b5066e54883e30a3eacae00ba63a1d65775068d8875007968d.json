@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE calendar_conflict SET\n            acknowledged_by = CASE WHEN acknowledged_at IS NULL THEN $3 ELSE acknowledged_by END,\n            acknowledged_at = COALESCE(acknowledged_at, now())\n         WHERE id = $1 AND listing_id = $2\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0af0f2dd7ba631b5066e54883e30a3eacae00ba63a1d65775068d8875007968d"
+}

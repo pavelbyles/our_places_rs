@@ -1,0 +1,52 @@
+---
+config:
+  layout: elk
+title: Booking flow - listing to enquiry (optional) to request to booking
+---
+%% Statuses mirror common::booking_request::RequestStatus, the enquiry_status /
+%% enquiry_closed_reason enums and db_core::models::BookingStatus. Every
+%% transition writes booking_request_history or booking_history and emails
+%% both parties via the email outbox.
+flowchart TB
+    START(["Guest views listing<br/>dates, guests, currency → priced quote"])
+
+    subgraph ENQ["Enquiry (optional) · booking_enquiry · blocks no dates · any booking mode"]
+        E_OPEN["open<br/>one per guest × listing"]
+        E_CLOSED(["closed<br/>request_submitted · quoted · closed_by_host<br/>booked · expired · superseded"])
+    end
+
+    subgraph REQ["Request to book · booking_request · blocks dates while live and expires_at > NOW()"]
+        R_OPEN["open<br/>priced snapshot · promo use reserved<br/>expires_at = LEAST(now + response window, check-in 00:00 Jamaica)"]
+        R_ACC["accepted - offer<br/>snapshot price"]
+        R_QUO["quoted - offer<br/>custom stay price · promo dropped"]
+        R_END(["declined · withdrawn · expired · cancelled<br/>dates released"])
+        R_CONV(["converted<br/>booking_id set"])
+    end
+
+    subgraph BK["Booking · booking · BookingStatus"]
+        B_PEND["pending - hold<br/>expires_at = now + pending_hold_minutes"]
+        B_CONF["confirmed<br/>payout ledger row · FX rate locked"]
+        B_COMP(["completed<br/>tax documents · review invite"])
+        B_CANC(["cancelled<br/>refund per cancellation policy"])
+    end
+
+    START -- "Ask a question" --> E_OPEN
+    START -- "Request to book<br/>mode: request | both" --> R_OPEN
+    START -- "Book now<br/>mode: instant | both" --> B_PEND
+
+    E_OPEN -- "Guest requests from enquiry" --> R_OPEN
+    E_OPEN -- "Host quotes on enquiry" --> R_QUO
+    E_OPEN -- "Enquiry closes: host closes it, newer enquiry,<br/>request or quote made, guest books now, check-in passes" --> E_CLOSED
+
+    R_OPEN -- "Host accepts" --> R_ACC
+    R_OPEN -- "Host sends quote" --> R_QUO
+    R_QUO -- "Host re-quotes (supersedes)" --> R_QUO
+    R_OPEN & R_ACC & R_QUO -- "Host declines with reason · guest withdraws<br/>window lapses (sweep) · guest books now" --> R_END
+    R_ACC & R_QUO -- "Guest checks out<br/>quote_id must be current" --> R_CONV
+    R_CONV -- "same transaction<br/>request stops blocking, hold starts" --> B_PEND
+
+    B_PEND -- "Payment arranged · host or admin confirms" --> B_CONF
+    B_PEND -- "Hold expires (sweep) · newer hold by guest · cancelled" --> B_CANC
+    B_CONF -- "Reservation change approved<br/>balance charged or refunded" --> B_CONF
+    B_CONF -- "Stay ends (complete-stays cron)" --> B_COMP
+    B_CONF -- "Guest, host or admin cancels" --> B_CANC

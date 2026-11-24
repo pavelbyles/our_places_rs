@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.id, l.user_id AS host_id\n        FROM booking_request r\n        JOIN listing l ON l.id = r.listing_id\n        WHERE r.status = 'open'\n          AND r.expires_at > NOW()\n          AND EXTRACT(EPOCH FROM (r.expires_at - NOW())) * 100\n              <= EXTRACT(EPOCH FROM (r.expires_at - r.created_at)) * $1::int8\n          AND NOT EXISTS (\n              SELECT 1 FROM request_notification_log n\n              WHERE n.request_id = r.id AND n.notification_type = 'request_host_reminder'\n          )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "host_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b17db1d1242f7bad9a02bc2ebed340498ed3f6d9c8fa1a793c1123e3493fdf74"
+}

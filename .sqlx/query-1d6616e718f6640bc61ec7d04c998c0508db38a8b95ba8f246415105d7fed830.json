@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM host_payout_ledger WHERE booking_id = $1 OR booking_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d6616e718f6640bc61ec7d04c998c0508db38a8b95ba8f246415105d7fed830"
+}

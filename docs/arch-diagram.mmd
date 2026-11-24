@@ -4,36 +4,52 @@ config:
 id: d2671ee2-7f53-46a6-80ca-ea8fb0760acb
 ---
 flowchart TB
- subgraph s1["WebAssembly Frontend - Leptos"]
-        WA["web_app - Guest Portal"]
-        WAA["web_app_admin - Admin Dashboard"]
-        WAC["web_app_common - Shared UI & API Client"]
+ subgraph s1["Topcoat SSR Portals (public, Cloud Run)"]
+        WG["web_ui_guest :3010 - Guest Portal<br/>listings, checkout, enquiries, requests, bookings"]
+        WA["web_ui_admin :3012 - Admin & Host Dashboard<br/>listings, booking mode, inbox, quotes, rates, payouts"]
+        WUC["web_ui_common - Components, Theme, Shells, CSP"]
+        WC["web_client - API Client, Sessions, Guards, JWT Minting"]
   end
- subgraph s2["Shared Isomorphic Crates"]
-        COM["common - Isomorphic Pricing & Ref Data"]
-        DBC["db_core - SQLx PostgreSQL Entities & Migrations"]
+ subgraph s2["Shared Crates"]
+        COM["common - Pricing, Request Lifecycle, Ref Data, Typed API Client"]
+        DBC["db_core - SQLx Entities, Locks & Migrations"]
   end
- subgraph s3["Actix-web API Services"]
-        LA["listing_api - Listings & Geocoding"]
-        BA["booking_api - Booking State Machine"]
-        UA["user_api - Auth & Profiles"]
-        IW["image_worker - Background Image Processor"]
+ subgraph s3["Actix-web API Services (private, Cloud Run IAM)"]
+        AC["api_core - Errors, Auth Extractors, Startup, Email Publisher"]
+        LA["listing_api - Listings, Search, Geocoding, Signed URLs"]
+        BA["booking_api - Bookings, Enquiries, Requests & Quotes,<br/>Conversations, Inbox, Promo, FX, Payouts, Sweeps"]
+        UA["user_api - Auth, Profiles, Sessions"]
   end
- subgraph s4["Google Cloud Platform"]
-        PG[("PostgreSQL Database")]
-        GCS[("Google Cloud Storage")]
-        PS["GCP Pub/Sub Event Bus"]
+ subgraph s4["Workers (internal ingress)"]
+        IW["image_worker - WebP Resizer"]
+        EW["email_worker - Outbox Sender"]
   end
-    WA --> WAC
-    WAA --> WAC
-    WA -.-> COM
-    WAA -.-> COM
-    LA --> COM & DBC
-    BA --> COM & DBC
-    UA --> COM & DBC
-    IW --> DBC
+ subgraph s5["Google Cloud Platform"]
+        PG[("Cloud SQL PostgreSQL<br/>+ pg_cron")]
+        GCSR[("GCS Raw Bucket")]
+        GCSP[("GCS Public Bucket")]
+        PSI["Pub/Sub: Image Uploads"]
+        PSE["Pub/Sub: Email Notifications"]
+        SCH["Cloud Scheduler<br/>run-sweeps, complete-stays"]
+  end
+    SMTP["SMTP Provider"]
+
+    WG --> WUC
+    WA --> WUC
+    WUC --> WC
+    WC -- ID token + user JWT --> LA & BA & UA
+    WC -.-> COM
+    LA & BA & UA --> AC
+    LA & BA & UA & IW & EW --> DBC
+    AC --> DBC
     DBC --> PG
-    LA -- V4 Signed URL --> GCS
-    GCS -- Upload Notification --> PS
-    PS -- Push Event --> IW
-    IW -- Optimized WebP Assets --> GCS
+    DBC -.-> COM
+    LA -- V4 Signed URL --> WA
+    WA -- Direct Upload --> GCSR
+    GCSR -- Upload Notification --> PSI
+    PSI -- Push Event --> IW
+    IW -- Optimized WebP Assets --> GCSP
+    BA & UA -- 1. insert email_outbox / 2. publish id --> PSE
+    PSE -- Push Event --> EW
+    EW --> SMTP
+    SCH -- OIDC + x-cron-secret --> BA

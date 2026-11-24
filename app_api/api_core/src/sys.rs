@@ -1,3 +1,4 @@
+/// The `PORT` environment variable, or `default_port` when it's missing or invalid.
 pub fn get_port(default_port: u16) -> u16 {
     static ENV_PORT_VAR: &str = "PORT";
 

@@ -1,0 +1,1091 @@
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::marker::PhantomData;
+use uuid::Uuid;
+
+/// Status of an outbox email notification record during delivery lifecycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "sqlx",
+    sqlx(type_name = "email_status", rename_all = "lowercase")
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EmailStatus {
+    /// Email is enqueued in the outbox table awaiting worker dispatch.
+    Pending,
+    /// Email is currently being dispatched by a worker process.
+    Processing,
+    /// Email has been successfully accepted by the SMTP provider.
+    Sent,
+    /// Email delivery failed after exhausting all configured retry attempts.
+    Failed,
+}
+
+impl fmt::Display for EmailStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pending => write!(f, "pending"),
+            Self::Processing => write!(f, "processing"),
+            Self::Sent => write!(f, "sent"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+impl std::str::FromStr for EmailStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(Self::Pending),
+            "processing" => Ok(Self::Processing),
+            "sent" => Ok(Self::Sent),
+            "failed" => Ok(Self::Failed),
+            other => Err(format!("Unknown email status: {}", other)),
+        }
+    }
+}
+
+/// Cloud Pub/Sub event emitted to notify background workers of a newly created outbox email.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmailNotificationEvent {
+    /// Primary key identifier of the outbox record to be processed.
+    pub email_id: Uuid,
+}
+
+/// Identifiers for transactional email templates supported by the notification pipeline.
+/// Names come from `strum` (`as_str`, `FromStr`), matching the serde names.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum_macros::IntoStaticStr,
+    strum_macros::EnumString,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum EmailTemplate {
+    /// One-time password verification email for new user registration.
+    UserVerificationOtp,
+    /// One-time password code for account password reset.
+    PasswordResetOtp,
+    /// Generic booking confirmation notification.
+    BookingConfirmation,
+    /// Comprehensive booking confirmation notification delivered to the guest.
+    BookingConfirmationGuest,
+    /// Booking notification and payout details delivered to the host.
+    BookingConfirmationHost,
+    /// Notification delivered to the guest when booking dates or details are updated.
+    BookingUpdatedGuest,
+    /// Notification delivered to the host when guest modifies booking dates or party size.
+    BookingUpdatedHost,
+    /// Notification and refund details delivered to guest upon booking cancellation.
+    BookingCancelledGuest,
+    /// Notification delivered to host upon guest or administrative cancellation.
+    BookingCancelledHost,
+    /// Pre-arrival instructions including door access PIN and WiFi credentials for guest.
+    PreArrivalGuideGuest,
+    /// Reminder delivered to host before guest check-in date.
+    HostUpcomingArrival,
+    /// Reminder notification before an unconfirmed pending booking hold expires.
+    PaymentHoldExpiryReminder,
+    /// In-app chat notification delivered when a counterparty sends a new message.
+    GuestHostMessageNotification,
+    /// Notification delivered to guest after stay completion with final statutory tax invoice link.
+    BookingCompletedGuest,
+    /// Notification delivered to counterparty when a reservation change request is submitted.
+    ReservationChangeRequested,
+    /// Notification delivered when a reservation change request is approved and settled.
+    ReservationChangeApproved,
+    /// Notification delivered to initiator when a reservation change request is declined.
+    ReservationChangeDeclined,
+    /// Confirms to the guest that their enquiry reached the host.
+    EnquirySentGuest,
+    /// Tells the host a guest has a question about their listing.
+    EnquiryReceivedHost,
+    /// Confirms to the guest that their request to book was sent.
+    RequestSubmittedGuest,
+    /// Asks the host to answer a new request to book.
+    RequestReceivedHost,
+    /// Tells the guest the host accepted their request and when the offer ends.
+    RequestAcceptedGuest,
+    /// Confirms to the host that they accepted a request.
+    RequestAcceptedHost,
+    /// Tells the guest the host declined, with the reason and note.
+    RequestDeclinedGuest,
+    /// Confirms to the host that a request was declined.
+    RequestDeclinedHost,
+    /// Sends the guest a custom quote with its price, terms and expiry.
+    QuoteSentGuest,
+    /// Confirms to the host that their custom quote was sent.
+    QuoteSentHost,
+    /// Asks the guest to pay for the hold created from their offer.
+    RequestConvertedGuest,
+    /// Tells the host the guest took up the offer and is paying.
+    RequestConvertedHost,
+    /// Tells the guest their request or offer expired and the dates were released.
+    RequestExpiredGuest,
+    /// Tells the host a request or offer expired and the dates were released.
+    RequestExpiredHost,
+    /// Confirms to the guest that their request was withdrawn or replaced.
+    RequestWithdrawnGuest,
+    /// Tells the host a guest withdrew or replaced their request.
+    RequestWithdrawnHost,
+    /// Reminds the host once that an unanswered request is about to expire.
+    RequestHostReminder,
+    /// Tells the host an imported calendar event collides with a stay (#58).
+    CalendarConflictHost,
+    /// Tells the host an imported calendar keeps failing to sync (#58).
+    CalendarFeedFailingHost,
+    /// Invite email sent to newly created cleaning/maintenance crew with a single-use password setup link (#66).
+    StaffInvite,
+    /// Consent invitation emailed to an existing account before attaching staff role or roster links (#66).
+    StaffAcceptInvite,
+    /// Notification email sent when an existing staff member is assigned to listings (#66).
+    StaffListingAssigned,
+    /// Self-service password reset email carrying a single-use token link (#66).
+    PasswordResetLink,
+    /// Operational crew/host notification triggered by a new comment on a turnover event (#66).
+    TurnoverCommentNotification,
+    /// Notification sent to assigned maintenance staff when a new turnover is created (#66).
+    TurnoverCreated,
+}
+
+impl EmailTemplate {
+    /// The enquiry and request-to-book emails, rendered through one shared layout.
+    pub const REQUEST_EMAILS: [Self; 17] = [
+        Self::EnquirySentGuest,
+        Self::EnquiryReceivedHost,
+        Self::RequestSubmittedGuest,
+        Self::RequestReceivedHost,
+        Self::RequestAcceptedGuest,
+        Self::RequestAcceptedHost,
+        Self::RequestDeclinedGuest,
+        Self::RequestDeclinedHost,
+        Self::QuoteSentGuest,
+        Self::QuoteSentHost,
+        Self::RequestConvertedGuest,
+        Self::RequestConvertedHost,
+        Self::RequestExpiredGuest,
+        Self::RequestExpiredHost,
+        Self::RequestWithdrawnGuest,
+        Self::RequestWithdrawnHost,
+        Self::RequestHostReminder,
+    ];
+
+    /// Returns the static template identifier string matching filesystem HTML template filenames.
+    pub fn as_str(&self) -> &'static str {
+        self.into()
+    }
+}
+
+impl fmt::Display for EmailTemplate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+// ============================================================================
+// Strongly-Typed Transactional Email Payloads (Zero-Float Guarantee)
+// ============================================================================
+
+/// Payload of [`EmailTemplate::CalendarConflictHost`]. Holds no feed URL.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CalendarConflictHostPayload {
+    /// The listing's name.
+    pub listing_name: String,
+    /// The imported calendar's name.
+    pub feed_name: String,
+    /// The imported block's first night.
+    pub date_from: String,
+    /// The night after the imported block's last night.
+    pub date_to: String,
+    /// The booking's reservation number.
+    pub confirmation_code: String,
+    /// `overlap` or `turnover`.
+    pub kind: String,
+    /// `"true"` when the conflict reopened.
+    pub reopened: String,
+    /// The listing's calendar page in the admin portal.
+    pub calendar_url: String,
+}
+
+/// Payload of [`EmailTemplate::CalendarFeedFailingHost`]. Holds no feed URL.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CalendarFeedFailingHostPayload {
+    /// The listing's name.
+    pub listing_name: String,
+    /// The imported calendar's name.
+    pub feed_name: String,
+    /// The last failure's sanitised reason.
+    pub error_code: String,
+    /// Scheduled syncs that failed in a row.
+    pub failures: i32,
+    /// The listing's calendar page in the admin portal.
+    pub calendar_url: String,
+}
+
+/// Payload of [`EmailTemplate::StaffInvite`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StaffInviteEmailPayload {
+    /// Invited staff member's first name.
+    pub first_name: String,
+    /// Inviting host or administrator display name.
+    pub host_name: String,
+    /// Names of listings currently assigned by this host.
+    pub listing_names: Vec<String>,
+    /// Admin portal password setup link carrying a single-use token.
+    pub setup_url: String,
+    /// Lifetime of the invite link in hours.
+    pub expires_hours: i64,
+}
+
+/// Payload of [`EmailTemplate::StaffAcceptInvite`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StaffAcceptInviteEmailPayload {
+    /// Invited account holder's first name.
+    pub first_name: String,
+    /// Inviting host or administrator display name.
+    pub host_name: String,
+    /// Names of listings offered by this host.
+    pub listing_names: Vec<String>,
+    /// Admin portal consent link carrying a single-use `staff_accept` token.
+    pub accept_url: String,
+    /// Lifetime of the accept link in hours.
+    pub expires_hours: i64,
+}
+
+/// Payload of [`EmailTemplate::StaffListingAssigned`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StaffListingAssignedEmailPayload {
+    /// Assigned staff member's first name.
+    pub first_name: String,
+    /// Host or administrator display name who updated assignments.
+    pub host_name: String,
+    /// Updated listing names assigned for this host.
+    pub listing_names: Vec<String>,
+    /// Deep link to the admin portal turnover dispatch view.
+    pub dispatch_url: String,
+}
+
+/// Payload of [`EmailTemplate::PasswordResetLink`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PasswordResetLinkEmailPayload {
+    /// Account holder's first name.
+    pub first_name: String,
+    /// Admin portal password reset link carrying a single-use token.
+    pub reset_url: String,
+    /// Lifetime of the reset link in minutes.
+    pub expires_minutes: i64,
+}
+
+/// Payload of [`EmailTemplate::TurnoverCommentNotification`]. Contains zero guest PII or financials.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TurnoverCommentNotificationPayload {
+    /// Property listing name.
+    pub listing_name: String,
+    /// Turnover checkout / target date formatted `YYYY-MM-DD`.
+    pub checkout_date: String,
+    /// Display name of the comment author.
+    pub author_name: String,
+    /// Role of the comment author (`host`, `admin`, or `staff`).
+    pub author_role: String,
+    /// Plain-text comment body (escaped by email worker).
+    pub comment_body: String,
+    /// Deep link to `/admin/turnovers/{id}`.
+    pub turnover_url: String,
+}
+
+/// Payload of [`EmailTemplate::TurnoverCreated`]. Contains zero guest PII or financials.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TurnoverCreatedNotificationPayload {
+    /// Property listing name.
+    pub listing_name: String,
+    /// Turnover checkout / target date formatted `YYYY-MM-DD`.
+    pub checkout_date: String,
+    /// Human-readable source label (`Confirmed Booking`, `Imported Calendar Block`, or `Manual / Maintenance`).
+    pub source_label: String,
+    /// Optional short task title (e.g. for manual/maintenance turnovers).
+    pub title: Option<String>,
+    /// Deep link to `/admin/turnovers/{id}`.
+    pub turnover_url: String,
+}
+
+/// Strongly-typed email payload for guest booking confirmation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingConfirmationGuestPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Total price charged.
+    pub total_price: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Full name of primary guest.
+    pub guest_name: String,
+    /// Net accommodation charges after subtracting discounts.
+    #[serde(default)]
+    pub accommodation_net: Option<Decimal>,
+    /// Departure cleaning fee.
+    #[serde(default)]
+    pub cleaning_fee: Option<Decimal>,
+    /// Statutory tax rate applied (e.g. 0.1500).
+    #[serde(default)]
+    pub tax_rate: Option<Decimal>,
+    /// Statutory tax amount charged.
+    #[serde(default)]
+    pub tax_amount: Option<Decimal>,
+    /// Platform fee.
+    #[serde(default)]
+    pub platform_fee: Option<Decimal>,
+    /// Refundable security damage deposit held.
+    #[serde(default)]
+    pub damage_deposit: Option<Decimal>,
+    /// Direct URL to view statutory payment receipt.
+    #[serde(default)]
+    pub receipt_url: Option<String>,
+    /// The promo code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
+    /// The whole promo discount. Already reflected in the net amounts.
+    #[serde(default)]
+    pub promo_discount: Option<Decimal>,
+}
+
+/// Strongly-typed email payload for host booking confirmation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingConfirmationHostPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Net payout to host from the ledger, in `currency`. `None` when the ledger
+    /// row couldn't be read, so no figure is shown rather than a wrong one.
+    #[serde(default)]
+    pub total_payout: Option<Decimal>,
+    /// Currency code.
+    pub currency: String,
+    /// Full name of primary guest.
+    pub guest_name: String,
+    /// Full name of property host.
+    pub host_name: String,
+    /// The promo code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
+    /// The whole promo discount the host funded, in `currency`.
+    #[serde(default)]
+    pub promo_discount: Option<Decimal>,
+}
+
+/// Strongly-typed email payload for guest booking modifications.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingUpdatedGuestPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Updated total price.
+    pub total_price: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Summary of changes applied.
+    pub changes_summary: String,
+    /// Direct link to revised payment receipt if issued.
+    #[serde(default)]
+    pub receipt_url: Option<String>,
+    /// Additional balance due or refundable post-revision.
+    #[serde(default)]
+    pub balance_due: Option<Decimal>,
+}
+
+/// Strongly-typed email payload for host booking modifications.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingUpdatedHostPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Net payout to host from the ledger, in `currency`. `None` when the ledger
+    /// row couldn't be read, so no figure is shown rather than a wrong one.
+    #[serde(default)]
+    pub total_payout: Option<Decimal>,
+    /// Currency code.
+    pub currency: String,
+    /// Full name of primary guest.
+    pub guest_name: String,
+    /// Summary of changes applied.
+    pub changes_summary: String,
+    /// The promo code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
+    /// The whole promo discount the host funded, in `currency`.
+    #[serde(default)]
+    pub promo_discount: Option<Decimal>,
+}
+
+/// Strongly-typed email payload for guest booking cancellation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingCancelledGuestPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Amount refunded to guest.
+    pub refund_amount: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Applied cancellation policy identifier.
+    pub cancellation_policy: String,
+    /// Accommodation refund percentage applied.
+    #[serde(default)]
+    pub refund_pct: Option<Decimal>,
+    /// Total amount retained across accommodation and platform fees.
+    #[serde(default)]
+    pub retained_amount: Option<Decimal>,
+}
+
+/// Strongly-typed email payload for host booking cancellation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingCancelledHostPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Full name of primary guest.
+    pub guest_name: String,
+    /// What the host still receives, from the ledger, in `currency`. `None` when
+    /// nothing is retained.
+    #[serde(default)]
+    pub payout_impact: Option<Decimal>,
+    /// Currency code.
+    pub currency: String,
+}
+
+/// Notification delivered to guest after completed checkout with final statutory tax invoice link.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingCompletedGuestPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Total price paid.
+    pub total_price: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Direct link to the final statutory tax invoice.
+    pub invoice_url: String,
+    /// Final statutory invoice document number (INV-YYYY-XXXX).
+    pub invoice_number: String,
+    /// Accommodation net total.
+    pub accommodation_net: Decimal,
+    /// Cleaning fee.
+    pub cleaning_fee: Decimal,
+    /// Statutory GCT tax amount.
+    pub tax_amount: Decimal,
+}
+
+/// Strongly-typed email payload for guest pre-arrival access guide.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PreArrivalGuideGuestPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Property physical street address.
+    pub address: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Door lock pin or keycode.
+    pub door_access_code: String,
+    /// Local WiFi network SSID.
+    pub wifi_ssid: Option<String>,
+    /// Local WiFi password.
+    pub wifi_password: Option<String>,
+    /// Specific check-in guidance from host.
+    pub check_in_instructions: Option<String>,
+}
+
+/// Strongly-typed email payload for upcoming guest arrival notification to host.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HostUpcomingArrivalPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Full name of arriving guest.
+    pub guest_name: String,
+    /// Number of guests in traveling party.
+    pub number_of_persons: i32,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Issued door access code if available.
+    pub door_access_code: Option<String>,
+}
+
+/// Strongly-typed email payload for pending hold expiration reminder.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PaymentHoldExpiryReminderPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of held property.
+    pub listing_name: String,
+    /// Timestamp when reservation hold expires.
+    pub expires_at: String,
+    /// Total reservation price.
+    pub total_price: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Direct URL to complete checkout.
+    pub checkout_url: String,
+}
+
+/// Strongly-typed email payload when a reservation change request is submitted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReservationChangeRequestedPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Unique reservation change request identifier.
+    pub change_request_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Full name of recipient (counterparty).
+    pub recipient_name: String,
+    /// Full name of initiator.
+    pub initiator_name: String,
+    /// Role of initiator (`guest`, `host`, or `admin`).
+    pub initiated_by_role: String,
+    /// Original check-in date.
+    pub previous_date_from: String,
+    /// Original check-out date.
+    pub previous_date_to: String,
+    /// Proposed check-in date.
+    pub proposed_date_from: String,
+    /// Proposed check-out date.
+    pub proposed_date_to: String,
+    /// Original guest count.
+    pub previous_number_of_persons: i32,
+    /// Proposed guest count.
+    pub proposed_number_of_persons: i32,
+    /// Original total price.
+    pub previous_total_price: Decimal,
+    /// Proposed total price.
+    pub proposed_total_price: Decimal,
+    /// Net balance due from guest (>0 charge, <0 refund, 0 none).
+    pub balance_due: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Optional initiator reason.
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// Direct URL to review and approve/decline the change request.
+    pub action_url: String,
+}
+
+/// Strongly-typed email payload when a reservation change request is approved and settled.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReservationChangeApprovedPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Unique reservation change request identifier.
+    pub change_request_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Full name of email recipient.
+    pub recipient_name: String,
+    /// Full name of approving counterparty.
+    pub responder_name: String,
+    /// Updated check-in date.
+    pub date_from: String,
+    /// Updated check-out date.
+    pub date_to: String,
+    /// Updated guest count.
+    pub number_of_persons: i32,
+    /// Updated total price.
+    pub total_price: Decimal,
+    /// Net balance settled (>0 charged, <0 refunded, 0 none).
+    pub balance_due: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Settlement status (`charged`, `refunded`, `not_required`).
+    pub settlement_status: String,
+    /// Optional note from responder.
+    #[serde(default)]
+    pub response_note: Option<String>,
+    /// Direct URL to view the revised payment receipt (`REC-YYYY-{code}-R{n}`).
+    #[serde(default)]
+    pub receipt_url: Option<String>,
+}
+
+/// Strongly-typed email payload when a reservation change request is declined.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReservationChangeDeclinedPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Unique reservation change request identifier.
+    pub change_request_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Full name of email recipient (initiator).
+    pub recipient_name: String,
+    /// Full name of declining counterparty.
+    pub responder_name: String,
+    /// Proposed check-in date that was declined.
+    pub proposed_date_from: String,
+    /// Proposed check-out date that was declined.
+    pub proposed_date_to: String,
+    /// Proposed guest count that was declined.
+    pub proposed_number_of_persons: i32,
+    /// Optional note from responder explaining why the change was declined.
+    #[serde(default)]
+    pub response_note: Option<String>,
+    /// Direct URL to view the unchanged booking.
+    pub booking_url: String,
+}
+
+// ============================================================================
+// Type State Pattern for Compile-Time Guaranteed Email State Transitions
+// ============================================================================
+
+/// Marker type indicating an email record is pending initial delivery attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingState;
+
+/// Marker type indicating an email record is actively being processed by a worker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessingState;
+
+/// Marker type indicating an email record has successfully completed delivery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SentState;
+
+/// Marker type indicating an email record has permanently failed delivery after retries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FailedState;
+
+/// Strongly-typed outbox email entity enforcing compile-time valid state machine transitions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmailRecord<State> {
+    /// Unique outbox email record identifier.
+    pub id: Uuid,
+    /// Target email recipient.
+    pub recipient_email: String,
+    /// Subject header line.
+    pub subject: String,
+    /// Template identifier.
+    pub template_id: String,
+    /// Template interpolation payload.
+    pub payload: serde_json::Value,
+    /// Number of delivery attempts made.
+    pub attempts: i32,
+    /// Maximum permitted retry attempts.
+    pub max_retries: i32,
+    /// Last delivery error message if any attempt failed.
+    pub last_error: Option<String>,
+    _state: PhantomData<State>,
+}
+
+impl EmailRecord<PendingState> {
+    /// Constructs a new pending email record with initial zero retry count.
+    pub fn new(
+        id: Uuid,
+        recipient_email: String,
+        subject: String,
+        template_id: String,
+        payload: serde_json::Value,
+        max_retries: i32,
+    ) -> Self {
+        Self {
+            id,
+            recipient_email,
+            subject,
+            template_id,
+            payload,
+            attempts: 0,
+            max_retries,
+            last_error: None,
+            _state: PhantomData,
+        }
+    }
+
+    /// Transition from Pending -> Processing (increments attempts)
+    pub fn start_processing(self) -> EmailRecord<ProcessingState> {
+        EmailRecord {
+            id: self.id,
+            recipient_email: self.recipient_email,
+            subject: self.subject,
+            template_id: self.template_id,
+            payload: self.payload,
+            attempts: self.attempts + 1,
+            max_retries: self.max_retries,
+            last_error: self.last_error,
+            _state: PhantomData,
+        }
+    }
+}
+
+impl EmailRecord<ProcessingState> {
+    /// Transition from Processing -> Sent
+    pub fn mark_sent(self) -> EmailRecord<SentState> {
+        EmailRecord {
+            id: self.id,
+            recipient_email: self.recipient_email,
+            subject: self.subject,
+            template_id: self.template_id,
+            payload: self.payload,
+            attempts: self.attempts,
+            max_retries: self.max_retries,
+            last_error: None,
+            _state: PhantomData,
+        }
+    }
+
+    /// Transition from Processing -> Failed
+    pub fn mark_failed(self, error_message: String) -> EmailRecord<FailedState> {
+        EmailRecord {
+            id: self.id,
+            recipient_email: self.recipient_email,
+            subject: self.subject,
+            template_id: self.template_id,
+            payload: self.payload,
+            attempts: self.attempts,
+            max_retries: self.max_retries,
+            last_error: Some(error_message),
+            _state: PhantomData,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_email_notification_event_serde() {
+        let id = Uuid::new_v4();
+        let event = EmailNotificationEvent { email_id: id };
+        let json = serde_json::to_string(&event).expect("Serialization failed");
+        let deserialized: EmailNotificationEvent =
+            serde_json::from_str(&json).expect("Deserialization failed");
+        assert_eq!(event, deserialized);
+    }
+
+    #[test]
+    fn test_email_status_serde_and_display() {
+        let statuses = [
+            (EmailStatus::Pending, "\"pending\"", "pending"),
+            (EmailStatus::Processing, "\"processing\"", "processing"),
+            (EmailStatus::Sent, "\"sent\"", "sent"),
+            (EmailStatus::Failed, "\"failed\"", "failed"),
+        ];
+
+        for (status, expected_json, expected_str) in statuses {
+            let json = serde_json::to_string(&status).expect("Serialization failed");
+            assert_eq!(json, expected_json);
+            let parsed: EmailStatus = serde_json::from_str(&json).expect("Deserialization failed");
+            assert_eq!(parsed, status);
+            assert_eq!(status.to_string(), expected_str);
+            assert_eq!(expected_str.parse::<EmailStatus>().unwrap(), status);
+        }
+    }
+
+    #[test]
+    fn test_email_template_display_and_as_str() {
+        let expected = [
+            (EmailTemplate::UserVerificationOtp, "user_verification_otp"),
+            (EmailTemplate::PasswordResetOtp, "password_reset_otp"),
+            (EmailTemplate::BookingConfirmation, "booking_confirmation"),
+            (
+                EmailTemplate::BookingConfirmationGuest,
+                "booking_confirmation_guest",
+            ),
+            (
+                EmailTemplate::BookingConfirmationHost,
+                "booking_confirmation_host",
+            ),
+            (EmailTemplate::BookingUpdatedGuest, "booking_updated_guest"),
+            (EmailTemplate::BookingUpdatedHost, "booking_updated_host"),
+            (
+                EmailTemplate::BookingCancelledGuest,
+                "booking_cancelled_guest",
+            ),
+            (
+                EmailTemplate::BookingCancelledHost,
+                "booking_cancelled_host",
+            ),
+            (
+                EmailTemplate::PreArrivalGuideGuest,
+                "pre_arrival_guide_guest",
+            ),
+            (EmailTemplate::HostUpcomingArrival, "host_upcoming_arrival"),
+            (
+                EmailTemplate::PaymentHoldExpiryReminder,
+                "payment_hold_expiry_reminder",
+            ),
+            (
+                EmailTemplate::GuestHostMessageNotification,
+                "guest_host_message_notification",
+            ),
+            (
+                EmailTemplate::BookingCompletedGuest,
+                "booking_completed_guest",
+            ),
+            (
+                EmailTemplate::ReservationChangeRequested,
+                "reservation_change_requested",
+            ),
+            (
+                EmailTemplate::ReservationChangeApproved,
+                "reservation_change_approved",
+            ),
+            (
+                EmailTemplate::ReservationChangeDeclined,
+                "reservation_change_declined",
+            ),
+        ];
+
+        for (variant, str_val) in expected {
+            assert_eq!(variant.as_str(), str_val);
+            assert_eq!(variant.to_string(), str_val);
+            assert_eq!(str_val.parse::<EmailTemplate>().unwrap(), variant);
+        }
+    }
+
+    #[test]
+    fn test_email_payloads_serde() {
+        let guest_confirm = BookingConfirmationGuestPayload {
+            booking_id: Uuid::new_v4(),
+            confirmation_code: "CONF123".into(),
+            listing_name: "Villa Ocean".into(),
+            date_from: "2026-11-01".into(),
+            date_to: "2026-11-05".into(),
+            total_price: Decimal::new(125050, 2),
+            currency: "USD".into(),
+            guest_name: "John Doe".into(),
+            accommodation_net: Some(Decimal::new(100000, 2)),
+            cleaning_fee: Some(Decimal::new(10000, 2)),
+            tax_rate: Some(Decimal::new(15, 2)),
+            tax_amount: Some(Decimal::new(16500, 2)),
+            platform_fee: Some(Decimal::new(5000, 2)),
+            damage_deposit: Some(Decimal::new(20000, 2)),
+            receipt_url: Some(
+                "http://localhost:8080/bookings/000/documents/REC-2026-CONF123".into(),
+            ),
+            promo_code: None,
+            promo_discount: None,
+        };
+        let json = serde_json::to_string(&guest_confirm).unwrap();
+        let parsed: BookingConfirmationGuestPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(guest_confirm, parsed);
+
+        // Backward compatibility: JSON missing optional fee fields deserializes with None
+        let legacy_json = serde_json::json!({
+            "booking_id": Uuid::new_v4(),
+            "confirmation_code": "LEGACY1",
+            "listing_name": "Villa Sunset",
+            "date_from": "2026-11-01",
+            "date_to": "2026-11-05",
+            "total_price": "1250.50",
+            "currency": "USD",
+            "guest_name": "Legacy Guest"
+        });
+        let legacy_parsed: BookingConfirmationGuestPayload =
+            serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(legacy_parsed.accommodation_net, None);
+        assert_eq!(legacy_parsed.cleaning_fee, None);
+        assert_eq!(legacy_parsed.receipt_url, None);
+
+        let pre_arrival = PreArrivalGuideGuestPayload {
+            booking_id: Uuid::new_v4(),
+            confirmation_code: "CONF123".into(),
+            listing_name: "Villa Ocean".into(),
+            address: "123 Coastal Way, Port Antonio".into(),
+            date_from: "2026-11-01".into(),
+            date_to: "2026-11-05".into(),
+            door_access_code: "4829".into(),
+            wifi_ssid: Some("VillaGuest".into()),
+            wifi_password: Some("secret123".into()),
+            check_in_instructions: Some("Keypad is on the front gate".into()),
+        };
+        let json = serde_json::to_string(&pre_arrival).unwrap();
+        let parsed: PreArrivalGuideGuestPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(pre_arrival, parsed);
+    }
+
+    #[test]
+    fn test_type_state_pending_to_processing_to_sent() {
+        let id = Uuid::new_v4();
+        let pending = EmailRecord::new(
+            id,
+            "guest@example.com".into(),
+            "Welcome".into(),
+            EmailTemplate::UserVerificationOtp.as_str().into(),
+            serde_json::json!({ "code": "123456" }),
+            3,
+        );
+        assert_eq!(pending.attempts, 0);
+
+        let processing = pending.start_processing();
+        assert_eq!(processing.attempts, 1);
+        assert_eq!(processing.id, id);
+
+        let sent = processing.mark_sent();
+        assert_eq!(sent.attempts, 1);
+        assert_eq!(sent.last_error, None);
+        assert_eq!(sent.id, id);
+    }
+
+    #[test]
+    fn test_type_state_pending_to_processing_to_failed() {
+        let id = Uuid::new_v4();
+        let pending = EmailRecord::new(
+            id,
+            "guest@example.com".into(),
+            "Welcome".into(),
+            EmailTemplate::PasswordResetOtp.as_str().into(),
+            serde_json::json!({ "token": "xyz" }),
+            3,
+        );
+
+        let processing = pending.start_processing();
+        assert_eq!(processing.attempts, 1);
+
+        let failed = processing.mark_failed("SMTP Connection Timeout".into());
+        assert_eq!(failed.attempts, 1);
+        assert_eq!(
+            failed.last_error.as_deref(),
+            Some("SMTP Connection Timeout")
+        );
+    }
+}
+
+#[cfg(test)]
+mod email_template_request_tests {
+    use super::EmailTemplate;
+    use std::str::FromStr;
+
+    #[test]
+    fn email_template_request_names_are_unique_and_round_trip() {
+        let mut names: Vec<_> = EmailTemplate::REQUEST_EMAILS
+            .iter()
+            .map(EmailTemplate::as_str)
+            .collect();
+        for template in EmailTemplate::REQUEST_EMAILS {
+            assert_eq!(EmailTemplate::from_str(template.as_str()), Ok(template));
+            assert_eq!(template.to_string(), template.as_str());
+        }
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), EmailTemplate::REQUEST_EMAILS.len());
+        assert_eq!(
+            EmailTemplate::REQUEST_EMAILS.map(|t| t.as_str()),
+            [
+                "enquiry_sent_guest",
+                "enquiry_received_host",
+                "request_submitted_guest",
+                "request_received_host",
+                "request_accepted_guest",
+                "request_accepted_host",
+                "request_declined_guest",
+                "request_declined_host",
+                "quote_sent_guest",
+                "quote_sent_host",
+                "request_converted_guest",
+                "request_converted_host",
+                "request_expired_guest",
+                "request_expired_host",
+                "request_withdrawn_guest",
+                "request_withdrawn_host",
+                "request_host_reminder",
+            ]
+        );
+        assert!(!names.contains(&"guest_host_message_notification"));
+    }
+
+    #[test]
+    fn turnover_email_templates_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        for (variant, expected) in [
+            (EmailTemplate::StaffInvite, "staff_invite"),
+            (EmailTemplate::StaffAcceptInvite, "staff_accept_invite"),
+            (
+                EmailTemplate::StaffListingAssigned,
+                "staff_listing_assigned",
+            ),
+            (EmailTemplate::PasswordResetLink, "password_reset_link"),
+            (
+                EmailTemplate::TurnoverCommentNotification,
+                "turnover_comment_notification",
+            ),
+            (EmailTemplate::TurnoverCreated, "turnover_created"),
+        ] {
+            assert_eq!(variant.as_str(), expected);
+            assert_eq!(variant.to_string(), expected);
+            assert_eq!(EmailTemplate::from_str(expected)?, variant);
+        }
+        Ok(())
+    }
+}

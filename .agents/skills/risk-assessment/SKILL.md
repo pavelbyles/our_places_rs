@@ -10,7 +10,7 @@ Quantify and prioritize technical, operational, and architectural risks to guide
 ## Assessment Process
 
 ```mermaid
-graph LR
+flowchart LR
     Threat[1. Identify Threat] --> Likelihood[2. Estimate Likelihood]
     Likelihood --> Impact[3. Quantify Impact]
     Impact --> Score[4. Calculate Risk Score]

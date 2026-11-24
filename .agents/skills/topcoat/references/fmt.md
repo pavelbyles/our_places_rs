@@ -1,6 +1,6 @@
-Topcoat includes a source formatter for macro bodies in Rust files. It is intended to run alongside normal Rust formatting: `rustfmt` formats Rust syntax, while `topcoat fmt` formats the syntax inside Topcoat-aware macro invocations.
+`topcoat fmt` formats Topcoat macro bodies in Rust source files. Add `--rustfmt` to format the surrounding Rust code too.
 
-# The CLI Command
+# Running the formatter
 
 Run the formatter with:
 
@@ -8,15 +8,22 @@ Run the formatter with:
 topcoat fmt
 ```
 
-Prefer the direct `topcoat fmt` command, especially from editors and other frequently-run integrations. `cargo topcoat fmt` also works, but it goes through Cargo's command dispatch path and adds unnecessary startup overhead.
+You can also run `cargo topcoat fmt`. Use `topcoat fmt` in editors to avoid starting Cargo for each format request.
 
-With no file arguments, the command scans Rust files under the current directory and writes changes in place.
+With no file arguments, the command scans Rust files under the current directory, skipping ignored files and `target`, and writes changes in place.
 
 ```sh
 topcoat fmt src/main.rs src/app
 ```
 
-File arguments can point at individual files or directories. Directories are expanded recursively to Rust files.
+Pass file or directory paths to limit the files to format. The command searches directories recursively for Rust files.
+
+Use `--check` to check formatting without writing files. The command reports each file that needs formatting on stderr and exits with status 1 if any input needs formatting or cannot be formatted. It exits with status 0 when all inputs are already formatted.
+
+```sh
+topcoat fmt --check
+topcoat fmt --check --rustfmt src
+```
 
 For editor integrations and other tools, use stdin/stdout mode:
 
@@ -26,36 +33,64 @@ topcoat fmt --stdin < src/main.rs > /tmp/main.rs
 
 In stdin mode, the formatted source is written to stdout instead of updating files on disk.
 
-By default the formatter handles every macro it knows about. Pass `--macros` with a comma-separated list to restrict it to a subset, leaving the rest untouched:
+With `--stdin --check`, the command checks the input without emitting formatted source. Diagnostics go to stderr, with the same exit statuses as file checks.
+
+Pass `--rustfmt` to run `rustfmt` first, then format Topcoat macro bodies:
+
+```sh
+topcoat fmt --rustfmt
+topcoat fmt --stdin --rustfmt < src/main.rs > /tmp/main.rs
+```
+
+This requires `rustfmt` on `PATH`. Install it with `rustup component add rustfmt`. Both formatters must succeed before a file is written or the formatted stdin is emitted. Errors go to stderr and cause a nonzero exit status.
+
+Note that you must specify the Rust edition manually in **`rustfmt.toml`** (project root):
+```toml
+edition = "2024"
+```
+
+By default, the formatter handles all supported macros. Pass a comma-separated list with `--macros` to format only those macros:
 
 ```sh
 topcoat fmt --macros view,class
 ```
 
-# What It Formats
+# Supported syntax
 
-The formatter parses Rust source, finds macro invocations it knows how to format, and replaces only those macro bodies. The surrounding Rust code is left as-is.
-
-In normal Topcoat code, this most notably means the HTML inside of a `view!` macro invocation is formatted:
+Without `--rustfmt`, the formatter changes only supported macro bodies. For example, it formats the HTML inside `view!`:
 
 ```rust
-use topcoat::{router::page, view::view};
+// src/app.rs
+use topcoat::{context::Cx, router::page, view::{View, view}};
 
-#[page("/")]
-async fn page() -> topcoat::Result {
-    view! {
+#[page]
+async fn page(cx: &Cx) -> topcoat::Result<impl View> {
+    Ok(view! {
         <main>
             <h1>"Hello"</h1>
         </main>
-    }
+    })
 }
 ```
 
-Many other macros such as `font!` also work.
-
-The `topcoat fmt` command decides what source snippets to format based on the macro name at the call site. If you reexport the macro with a different name, it will no longer be formatted.
+Macros are identified by their names at the call site. A macro imported or re-exported under a different name will not be formatted.
 
 # Editor integration
+
+## rust-analyzer (VS Code, Helix, Zed, etc.)
+
+Add the two files to your project root.
+
+1. `rustfmt.toml`
+   ```toml
+   edition = "2024"
+   ```
+
+2. `rust-analyzer.toml`
+   ```toml
+   [rustfmt]
+   overrideCommand = ["topcoat", "fmt", "--stdin", "--rustfmt"]
+   ```
 
 ## Neovim
 

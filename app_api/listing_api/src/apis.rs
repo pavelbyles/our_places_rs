@@ -1,25 +1,283 @@
+use crate::authz;
 use actix_web::middleware::from_fn;
 use actix_web::{HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
+use api_core::auth::Claims;
 use api_core::models::{
     ListingsWrapper, map_listing_to_response, map_listing_with_owner_to_response,
 };
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
-use common::models::{ListingQueryParams, ListingResponse, UpdatedListingRequest};
+use chrono::NaiveDate;
+use common::availability::{StaySearch, jamaica_today, parse_stay_search};
+use common::currency::CurrencyCode;
+use common::models::{
+    ListingQueryParams, ListingResponse, PriceOverride, StayTotal, UpdatedListingRequest,
+};
+use common::pricing::{StayPricingInput, fits_booking_columns, price_before_promo};
+use common::reference::SupportedCountry;
 use db_core::listing as db_listing;
-use db_core::models::{NewListing, StructureType, UpdatedListing};
+use db_core::models::{ListingWithOwner, NewListing, StructureType, UpdatedListing};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::str::FromStr;
 use utoipa::{IntoParams, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
+/// Parses an optional `?currency=` value strictly: a malformed code is a 400,
+/// never silently ignored or normalised.
+fn requested_currency(raw: Option<&str>) -> Result<Option<CurrencyCode>, ApiError> {
+    raw.map(|code| {
+        CurrencyCode::try_from(code).map_err(|e| {
+            tracing::warn!(currency = code, "rejected malformed currency parameter");
+            ApiError::Database(db_core::error::DbError::ValidationError(e.to_string()))
+        })
+    })
+    .transpose()
+}
+
+/// Loads the rates for a search in one batched lookup. Returns before pricing
+/// starts, so no connection is held during it.
+async fn load_search_rates(
+    pool: &PgPool,
+    bases: &[String],
+    target: &CurrencyCode,
+) -> Result<HashMap<String, Decimal>, ApiError> {
+    let mut conn = pool.acquire().await.map_err(|e| {
+        tracing::error!(error = %e, "could not acquire a connection for search conversion");
+        ApiError::Database(e.into())
+    })?;
+    db_core::exchange_rate::get_rates_for_bases(
+        &mut conn,
+        bases,
+        target.as_str(),
+        chrono::Utc::now(),
+        db_core::exchange_rate::RateUse::NewQuote,
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(to = %target, error = %e, "search currency conversion failed");
+        ApiError::Database(e)
+    })
+}
+
+/// Converts search results into `target` using rates already loaded.
+///
+/// Listings whose base currency cannot be quoted in `target` keep their base
+/// currency label, lose their prices and are flagged with
+/// `price_unavailable_in`: no fallback rate, no relabelled amounts. One
+/// aggregated `warn!` names the missing pairs.
+fn convert_search_prices(
+    listings: &mut [ListingResponse],
+    rates: &HashMap<String, Decimal>,
+    target: &CurrencyCode,
+) {
+    let missing: std::collections::BTreeSet<String> = listings
+        .iter_mut()
+        .filter_map(|listing| match rates.get(&listing.base_currency) {
+            Some(rate) => {
+                listing.price_per_night = listing.price_per_night.map(|p| (p * rate).round_dp(2));
+                listing.extra_guest_fee = listing.extra_guest_fee.map(|p| (p * rate).round_dp(2));
+                listing.base_currency = target.to_string();
+                None
+            }
+            None => {
+                listing.price_per_night = None;
+                listing.extra_guest_fee = None;
+                listing.price_unavailable_in = Some(target.to_string());
+                Some(listing.base_currency.clone())
+            }
+        })
+        .collect();
+    if !missing.is_empty() {
+        let affected = listings
+            .iter()
+            .filter(|l| l.price_unavailable_in.is_some())
+            .count();
+        tracing::warn!(
+            to = %target,
+            missing_bases = ?missing,
+            affected,
+            "search prices unavailable in requested currency"
+        );
+    }
+}
+
+/// One listing's stay to price. Owned, so it can move to a blocking thread.
+struct StayToPrice {
+    listing_id: Uuid,
+    nightly: Option<Decimal>,
+    minimum_stay: i32,
+    guests_included: i32,
+    extra_guest_fee: Decimal,
+    cleaning_fee: Decimal,
+    damage_deposit: Decimal,
+    weekly_discount_percentage: Option<Decimal>,
+    monthly_discount_percentage: Option<Decimal>,
+    country: String,
+    overrides: Vec<PriceOverride>,
+    rate: Decimal,
+    currency: String,
+}
+
+/// What the stay is, for every listing in a search.
+#[derive(Clone, Copy)]
+struct SearchedStay {
+    check_in: NaiveDate,
+    check_out: NaiveDate,
+    guests: i32,
+}
+
+/// Search totals, and the listings that couldn't be priced.
+#[derive(Default)]
+struct PricedStays {
+    totals: HashMap<Uuid, StayTotal>,
+    failed: Vec<Uuid>,
+}
+
+/// A stored discount outside 0–100 could overflow the calculation. New values
+/// are validated, but older rows may hold anything.
+fn discount_in_range(pct: Option<Decimal>) -> bool {
+    pct.is_none_or(|pct| (Decimal::ZERO..=Decimal::ONE_HUNDRED).contains(&pct))
+}
+
+/// A stay's total, through the same calculation as a quote and a hold. `None`
+/// when it can't be priced.
+fn price_search_stay(job: &StayToPrice, stay: SearchedStay) -> Option<StayTotal> {
+    if !discount_in_range(job.weekly_discount_percentage)
+        || !discount_in_range(job.monthly_discount_percentage)
+    {
+        return None;
+    }
+    let calculator = price_before_promo(StayPricingInput {
+        base_nightly_rate: job.nightly?,
+        minimum_stay: job.minimum_stay,
+        overrides: &job.overrides,
+        rate: job.rate,
+        check_in: stay.check_in,
+        check_out: stay.check_out,
+        number_of_persons: stay.guests,
+        guests_included: job.guests_included,
+        extra_guest_fee: job.extra_guest_fee,
+        cleaning_fee: job.cleaning_fee,
+        damage_deposit: job.damage_deposit,
+        weekly_discount_percentage: job.weekly_discount_percentage,
+        monthly_discount_percentage: job.monthly_discount_percentage,
+    })
+    .ok()?
+    .apply_promo(None)
+    .apply_taxes(SupportedCountry::tax_rate_for(&job.country))
+    .finalize();
+    fits_booking_columns(&calculator).then(|| StayTotal {
+        nights: calculator.total_days,
+        total_amount: calculator.total_price,
+        damage_deposit: calculator.damage_deposit,
+        currency: job.currency.clone(),
+    })
+}
+
+fn price_search_stays(jobs: Vec<StayToPrice>, stay: SearchedStay) -> PricedStays {
+    let mut priced = PricedStays::default();
+    for job in jobs {
+        match price_search_stay(&job, stay) {
+            Some(total) => {
+                priced.totals.insert(job.listing_id, total);
+            }
+            None => priced.failed.push(job.listing_id),
+        }
+    }
+    priced
+}
+
+/// If the pricing task itself fails, the listings still return, with no totals.
+fn totals_or_none(result: Result<PricedStays, tokio::task::JoinError>) -> PricedStays {
+    result.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "pricing search results failed");
+        PricedStays::default()
+    })
+}
+
+/// Totals for a page of search results. Works from the database rows, because
+/// `convert_search_prices` overwrites the response's prices and currency.
+///
+/// A failed override load fails the request: pricing without overrides would
+/// be a guess. A listing with no rate to `target` gets no total, and
+/// `convert_search_prices` flags it. The loop runs on a blocking thread, because
+/// a stay can be years long and a host sets the number of overrides.
+async fn search_stay_totals(
+    pool: &PgPool,
+    rows: &[ListingWithOwner],
+    stay: SearchedStay,
+    rates: Option<&HashMap<String, Decimal>>,
+    target: Option<&CurrencyCode>,
+) -> Result<HashMap<Uuid, StayTotal>, ApiError> {
+    let ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
+    let mut overrides =
+        db_listing::get_active_overrides_for_listings(pool, &ids, stay.check_in, stay.check_out)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, "could not load overrides for search totals");
+                ApiError::Database(e)
+            })?;
+    let jobs: Vec<StayToPrice> = rows
+        .iter()
+        .filter_map(|row| {
+            let rate = match rates {
+                Some(rates) => *rates.get(&row.base_currency)?,
+                None => Decimal::ONE,
+            };
+            Some(StayToPrice {
+                listing_id: row.id,
+                nightly: row.price_per_night,
+                minimum_stay: row.minimum_stay,
+                guests_included: row.guests_included,
+                extra_guest_fee: row.extra_guest_fee,
+                cleaning_fee: row.cleaning_fee,
+                damage_deposit: row.damage_deposit,
+                weekly_discount_percentage: row.weekly_discount_percentage,
+                monthly_discount_percentage: row.monthly_discount_percentage,
+                country: row.country.clone(),
+                overrides: overrides.remove(&row.id).unwrap_or_default(),
+                rate,
+                currency: target.map_or_else(|| row.base_currency.clone(), ToString::to_string),
+            })
+        })
+        .collect();
+
+    let priced =
+        totals_or_none(tokio::task::spawn_blocking(move || price_search_stays(jobs, stay)).await);
+    if !priced.failed.is_empty() {
+        tracing::warn!(listings = ?priced.failed, "search stays could not be priced");
+    }
+    Ok(priced.totals)
+}
+
+/// Reads what a guest searched for. A refusal is logged by its code alone,
+/// because the input can hold what they typed.
+fn read_stay_search(
+    query: &ListingQueryParams,
+    now: chrono::DateTime<chrono::Utc>,
+    max_stay_nights: i64,
+) -> Result<StaySearch, ApiError> {
+    parse_stay_search(
+        query.check_in.as_deref(),
+        query.check_out.as_deref(),
+        query.guests.as_deref(),
+        query.q.as_deref(),
+        jamaica_today(now),
+        max_stay_nights,
+    )
+    .map_err(|refused| {
+        tracing::warn!(code = refused.code(), "search input refused");
+        ApiError::Database(db_core::error::DbError::StayInput(refused))
+    })
+}
+
 /// Gives first 10 listings if no page or per_page is provided
-#[tracing::instrument(err)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings",
@@ -29,12 +287,17 @@ use validator::Validate;
     ),
     responses(
         (status = 200, description = "List of listings", body = [ListingResponse]),
+        (status = 400, description = "INVALID_STAY_DATES, INVALID_GUESTS or INVALID_SEARCH_TEXT"),
         (status = 500, description = "Internal server error")
     )
 )]
+// `skip_all`: the query and request both hold what a guest typed.
+#[tracing::instrument(skip_all)]
 pub async fn get_listings(
     pool: web::Data<sqlx::PgPool>,
     query: web::Query<common::models::ListingQueryParams>,
+    settings: web::Data<Settings>,
+    location_key: web::Data<common::location::LocationKey>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
     tracing::info!("GET /api/v1/listings entered");
@@ -54,6 +317,13 @@ pub async fn get_listings(
         }
     }
 
+    let search = read_stay_search(
+        &query,
+        chrono::Utc::now(),
+        settings.application.max_stay_nights,
+    )?;
+    let (check_in, check_out) = search.dates.unzip();
+
     // Set default values for pagination if they are not provided.
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(10);
@@ -70,33 +340,63 @@ pub async fn get_listings(
         owner: query.owner.clone(),
         resolution: query.resolution.clone(),
         currency: query.currency.clone(),
+        user_id: query.user_id,
+        host: query.host.clone(),
+        include_inactive: query.include_inactive,
+        check_in,
+        check_out,
+        guests: search.guests,
+        q: search.q.clone(),
     };
 
-    let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
+    let target = requested_currency(query.currency.as_deref())?;
+    let rows = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
         .await
         .map_err(|e| {
             tracing::error!("Database query failed: {:?}", e);
             ApiError::Database(e)
         })?;
-    let mut response: Vec<ListingResponse> = listings
+
+    let rates = match &target {
+        Some(target) => {
+            let bases: Vec<String> = rows
+                .iter()
+                .map(|row| row.base_currency.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            Some(load_search_rates(pool.get_ref(), &bases, target).await?)
+        }
+        None => None,
+    };
+
+    let mut totals = match search.dates {
+        Some((check_in, check_out)) if !rows.is_empty() => {
+            let stay = SearchedStay {
+                check_in,
+                check_out,
+                guests: search.guests.unwrap_or(1),
+            };
+            search_stay_totals(pool.get_ref(), &rows, stay, rates.as_ref(), target.as_ref()).await?
+        }
+        _ => HashMap::new(),
+    };
+
+    let mut response: Vec<ListingResponse> = rows
         .into_iter()
-        .map(map_listing_with_owner_to_response)
+        .map(|row| {
+            let stored = api_core::models::StoredLocation::from(&row);
+            let mut listing = map_listing_with_owner_to_response(row);
+            crate::public_location::public_location(&mut listing, stored, &location_key);
+            listing
+        })
         .collect();
 
-    if let Some(target_currency) = &query.currency {
-        let rates = db_core::currency::get_exchange_rates_cache(
-            pool.get_ref(),
-            response.iter().map(|l| &l.base_currency),
-            target_currency,
-        )
-        .await;
-
-        for listing in &mut response {
-            if let Some((rate, final_curr)) = rates.get(&listing.base_currency) {
-                listing.price_per_night = listing.price_per_night.map(|p| (p * rate).round_dp(2));
-                listing.base_currency = final_curr.clone();
-            }
-        }
+    if let (Some(rates), Some(target)) = (&rates, &target) {
+        convert_search_prices(&mut response, rates, target);
+    }
+    for listing in &mut response {
+        listing.stay_total = totals.remove(&listing.id);
     }
 
     Ok(respond(
@@ -107,12 +407,23 @@ pub async fn get_listings(
     ))
 }
 
+/// A listing as its manager sees it: the stored coordinates and setting.
+/// Only call this after `require_listing_manager` or `require_host_or_admin`.
+fn manager_listing_response(listing: db_core::models::Listing) -> ListingResponse {
+    let stored = api_core::models::StoredLocation::from(&listing);
+    let mut response = map_listing_to_response(listing);
+    api_core::models::with_stored_location(&mut response, stored);
+    response
+}
+
+/// Query parameter choosing a display currency.
 #[derive(Deserialize, Debug)]
 pub struct CurrencyQuery {
+    /// Currency to show amounts in.
     pub currency: Option<String>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}",
@@ -130,28 +441,44 @@ async fn get_listing_by_id(
     path: web::Path<String>,
     pool: web::Data<PgPool>,
     query: web::Query<CurrencyQuery>,
+    location_key: web::Data<common::location::LocationKey>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id_or_slug = path.into_inner();
     let listing_details =
         db_listing::get_listing_by_id_or_slug(pool.get_ref(), &listing_id_or_slug).await?;
 
+    let stored = api_core::models::StoredLocation::from(&listing_details.listing);
     let mut response = api_core::models::map_listing_details_to_response(listing_details);
+    crate::public_location::public_location(&mut response.listing, stored, &location_key);
 
-    #[allow(clippy::collapsible_if)]
-    if let Some(target_currency) = &query.currency {
-        if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
+    if let Some(target) = requested_currency(query.currency.as_deref())? {
+        let rate = db_core::exchange_rate::get_rate_pool(
             pool.get_ref(),
             &response.listing.base_currency,
-            target_currency,
+            target.as_str(),
+            chrono::Utc::now(),
+            db_core::exchange_rate::RateUse::NewQuote,
         )
         .await
-        {
-            response.listing.price_per_night = response
-                .listing
-                .price_per_night
-                .map(|p| (p * rate).round_dp(2));
-            response.listing.base_currency = final_curr;
-        }
+        .map_err(|e| {
+            tracing::warn!(
+                listing_id = %response.listing.id,
+                from = %response.listing.base_currency,
+                to = %target,
+                error = %e,
+                "listing detail currency conversion failed"
+            );
+            ApiError::Database(e)
+        })?;
+        response.listing.price_per_night = response
+            .listing
+            .price_per_night
+            .map(|p| (p * rate).round_dp(2));
+        response.listing.extra_guest_fee = response
+            .listing
+            .extra_guest_fee
+            .map(|p| (p * rate).round_dp(2));
+        response.listing.base_currency = target.to_string();
     }
 
     Ok(respond(
@@ -162,7 +489,7 @@ async fn get_listing_by_id(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings",
@@ -171,17 +498,34 @@ async fn get_listing_by_id(
     responses(
         (status = 201, description = "Listing created", body = ListingResponse),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn create_listing(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     new_listing: web::Json<common::models::NewListingRequest>,
     settings: web::Data<Settings>,
 ) -> Result<impl Responder, ApiError> {
-    let req_data = new_listing.into_inner();
+    let creator = authz::require_host_or_admin(pool.get_ref(), &claims, "create_listing").await?;
+    let mut req_data = new_listing.into_inner();
     req_data.validate()?;
+    common::location::validate_coordinates(req_data.latitude, req_data.longitude)?;
+    // A host always owns what they create; an admin may name an owner.
+    req_data.user_id = authz::listing_owner_for(pool.get_ref(), &creator, req_data.user_id).await?;
+
+    if req_data.guests_included > req_data.max_guests {
+        let mut errors = validator::ValidationErrors::new();
+        errors.add(
+            "guests_included",
+            validator::ValidationError::new("guests_included_exceeds_max_guests")
+                .with_message("guests_included cannot exceed max_guests.".into()),
+        );
+        return Err(ApiError::ValidationError(errors));
+    }
 
     let structure_type = StructureType::from_str(&req_data.listing_structure).map_err(|_| {
         let mut errors = validator::ValidationErrors::new();
@@ -222,13 +566,20 @@ async fn create_listing(
             base_currency: req_data.base_currency.clone(),
             minimum_stay: req_data.minimum_stay,
             days_between_bookings: req_data.days_between_bookings,
+            commission_pct: req_data.commission_pct,
+            cleaning_fee: req_data.cleaning_fee,
+            damage_deposit: req_data.damage_deposit,
+            guests_included: Some(req_data.guests_included),
+            extra_guest_fee: req_data.extra_guest_fee,
+            is_active: req_data.is_active,
+            location_privacy: req_data.location_privacy,
         };
 
-        match db_listing::create_listing(pool.get_ref(), &listing).await {
+        match db_listing::create_listing_with_active_currency(pool.get_ref(), &listing).await {
             Ok(created_listing) => {
                 return Ok(respond(
                     &req,
-                    Payload::Item(map_listing_to_response(created_listing)),
+                    Payload::Item(manager_listing_response(created_listing)),
                     |_: Vec<ListingResponse>| (),
                     actix_web::http::StatusCode::CREATED,
                 ));
@@ -257,6 +608,7 @@ async fn create_listing(
                             continue;
                         }
                     }
+                    _ => {}
                 }
                 return Err(ApiError::Database(e));
             }
@@ -264,7 +616,7 @@ async fn create_listing(
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     patch,
     path = "/api/v1/listings/{id}",
@@ -276,18 +628,51 @@ async fn create_listing(
     responses(
         (status = 200, description = "Listing updated", body = ListingResponse),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn update_listing(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     updated_listing_req: web::Json<UpdatedListingRequest>,
+    location_key: web::Data<common::location::LocationKey>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "update_listing").await?;
     let req_data = updated_listing_req.into_inner();
     req_data.validate()?;
+    common::location::validate_coordinates(req_data.latitude, req_data.longitude)?;
+
+    // Echo guard (spec 103 §1.1.5): a stale form may send back the public point.
+    let (latitude, longitude) = match (req_data.latitude, req_data.longitude) {
+        (None, None) => (None, None),
+        (lat, lng) => {
+            let stored = db_listing::get_listing_location(pool.get_ref(), listing_id)
+                .await?
+                .map(api_core::models::StoredLocation::from)
+                .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+                    sqlx::Error::RowNotFound,
+                )))?;
+            let (lat, lng, echoed) = crate::public_location::drop_echoed_public_point(
+                lat,
+                lng,
+                stored,
+                &location_key,
+                listing_id,
+            );
+            if echoed {
+                tracing::warn!(
+                    %listing_id,
+                    "update carried the public point of an approximate listing; kept the stored coordinates"
+                );
+            }
+            (lat, lng)
+        }
+    };
 
     let structure_id = if let Some(ref structure_str) = req_data.listing_structure {
         let st = StructureType::from_str(structure_str).map_err(|_| {
@@ -306,7 +691,7 @@ async fn update_listing(
 
     let city = if req_data.city.is_some() {
         req_data.city
-    } else if let (Some(lat), Some(lon)) = (req_data.latitude, req_data.longitude) {
+    } else if let (Some(lat), Some(lon)) = (latitude, longitude) {
         common::geocode::reverse_geocode(lat, lon)
             .await
             .unwrap_or(None)
@@ -329,13 +714,20 @@ async fn update_listing(
         full_bathrooms: req_data.full_bathrooms,
         half_bathrooms: req_data.half_bathrooms,
         square_meters: req_data.square_meters,
-        latitude: req_data.latitude,
-        longitude: req_data.longitude,
+        latitude,
+        longitude,
         listing_details: req_data.listing_details,
         city,
         base_currency: req_data.base_currency,
         minimum_stay: req_data.minimum_stay,
         days_between_bookings: req_data.days_between_bookings,
+        commission_pct: req_data.commission_pct,
+        cleaning_fee: req_data.cleaning_fee,
+        damage_deposit: req_data.damage_deposit,
+        guests_included: req_data.guests_included,
+        extra_guest_fee: req_data.extra_guest_fee,
+        booking_mode: req_data.booking_mode,
+        location_privacy: req_data.location_privacy,
     };
 
     let updated_listing =
@@ -343,18 +735,71 @@ async fn update_listing(
 
     Ok(respond(
         &req,
-        Payload::Item(map_listing_to_response(updated_listing)),
+        Payload::Item(manager_listing_response(updated_listing)),
         |_: Vec<ListingResponse>| (),
         actix_web::http::StatusCode::OK,
     ))
 }
 
+#[tracing::instrument(skip_all)]
+#[utoipa::path(
+    get,
+    path = "/api/v1/listings/{id}/location",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID")
+    ),
+    responses(
+        (status = 200, description = "The stored location and setting", body = common::location::ListingLocationResponse),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
+        (status = 404, description = "Listing not found or deleted"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+/// The stored location of a listing, for its owner or an admin (spec 103
+/// §2.2). Built from the row, never from the fail-closed public mapper.
+async fn get_listing_location(
+    claims: Claims,
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "get_listing_location")
+        .await?;
+    let row = db_listing::get_listing_location(pool.get_ref(), listing_id)
+        .await?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+    let point = row.latitude.zip(row.longitude);
+    let body = common::location::ListingLocationResponse {
+        latitude: point.map(|(lat, _)| lat),
+        longitude: point.map(|(_, lng)| lng),
+        location_privacy: row.location_privacy,
+    };
+    let mut response = respond(
+        &req,
+        Payload::Item(body),
+        |_: Vec<common::location::ListingLocationResponse>| (),
+        actix_web::http::StatusCode::OK,
+    );
+    response.headers_mut().insert(
+        actix_web::http::header::CACHE_CONTROL,
+        actix_web::http::header::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
+}
+
+/// Query parameters of listing deletion.
 #[derive(Deserialize, IntoParams, Debug)]
 pub struct DeleteListingParams {
+    /// Delete permanently instead of soft-deleting, where enabled.
     pub hard_delete: Option<bool>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     delete,
     path = "/api/v1/listings/{id}",
@@ -370,13 +815,15 @@ pub struct DeleteListingParams {
     )
 )]
 async fn delete_listing(
-    req: HttpRequest,
+    claims: Claims,
+    _req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     query: web::Query<DeleteListingParams>,
     settings: web::Data<Settings>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "delete_listing").await?;
     let hard_delete = query.hard_delete.unwrap_or(false);
 
     // Guard: Prevent hard delete if the feature flag is off
@@ -389,7 +836,7 @@ async fn delete_listing(
     Ok(HttpResponse::NoContent().finish())
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings/{id}/images/presign",
@@ -401,16 +848,20 @@ async fn delete_listing(
     responses(
         (status = 200, description = "Presigned URLs generated", body = [common::models::ImagePresignResponse]),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn presign_batch(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     img_metadata_list_json: web::Json<common::models::ImagePresignRequest>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "presign_images").await?;
     let img_metadata_req = img_metadata_list_json.into_inner();
 
     // Verify the listing exists first
@@ -427,21 +878,39 @@ async fn presign_batch(
         return Err(ApiError::ValidationError(errors));
     }
 
+    // The upload carries this request's trace context as object metadata, so
+    // the image worker's processing joins this trace.
+    let traceparent =
+        common::telemetry::current_trace_headers().remove(common::telemetry::TRACEPARENT);
+    let upload_headers: std::collections::HashMap<String, String> = traceparent
+        .iter()
+        .map(|value| {
+            (
+                common::gcs::TRACEPARENT_METADATA_HEADER.to_owned(),
+                value.clone(),
+            )
+        })
+        .collect();
+
     // Generate the IDs and upload URLs first so they can be saved to the database.
     let mut db_payload = Vec::new();
     for image in &img_metadata_req.images {
         let file_id = Uuid::new_v4();
         let object_path = format!("listing_{}/image_{}", listing_id, file_id);
-        let upload_url = common::gcs::generate_v4_signed_url(&object_path, &image.content_type)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    "Failed to generate presigned URL for listing_id: {}: {:?}",
-                    listing_id,
-                    e
-                );
-                ApiError::Internal
-            })?;
+        let upload_url = common::gcs::generate_v4_signed_url(
+            &object_path,
+            &image.content_type,
+            traceparent.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to generate presigned URL for listing_id: {}: {:?}",
+                listing_id,
+                e
+            );
+            ApiError::Internal
+        })?;
 
         db_payload.push((file_id, image.clone(), upload_url));
     }
@@ -470,6 +939,7 @@ async fn presign_batch(
             file_id: img.id,
             // Safe to unwrap here because we literally just inserted these URLs in the DB ourselves
             upload_url: img.upload_url.unwrap_or_default(),
+            upload_headers: upload_headers.clone(),
         });
     }
 
@@ -481,6 +951,82 @@ async fn presign_batch(
     ))
 }
 
+#[tracing::instrument(skip(claims, pool))]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/listings/{id}/images/{image_id}",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID"),
+        ("image_id" = String, Path, description = "Photo UUID (the original upload, not a resized variant)")
+    ),
+    responses(
+        (status = 204, description = "Photo and its resized variants deleted"),
+        (status = 404, description = "Photo not found on this listing"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn delete_listing_image(
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, image_id) = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "delete_image").await?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| ApiError::Database(e.into()))?;
+    db_listing::delete_listing_image(&mut tx, listing_id, image_id).await?;
+    tx.commit()
+        .await
+        .map_err(|e| ApiError::Database(e.into()))?;
+    tracing::info!(%listing_id, %image_id, "listing photo deleted");
+
+    Ok(HttpResponse::NoContent().finish())
+}
+
+#[tracing::instrument(skip(claims, pool, body))]
+#[utoipa::path(
+    patch,
+    path = "/api/v1/listings/{id}/images/{image_id}",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID"),
+        ("image_id" = String, Path, description = "Photo UUID (the original upload, not a resized variant)")
+    ),
+    request_body = common::models::RenameListingImageRequest,
+    responses(
+        (status = 200, description = "Photo renamed; body is `{ \"id\", \"name\" }`"),
+        (status = 400, description = "INVALID_PHOTO_NAME: over 80 characters"),
+        (status = 404, description = "Photo not found on this listing"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn rename_listing_image(
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+    body: web::Json<common::models::RenameListingImageRequest>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, image_id) = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "rename_image").await?;
+    let name = common::listing_details::validate_photo_name(body.name.as_deref()).map_err(|e| {
+        tracing::warn!(%listing_id, %image_id, error = %e, "photo name refused");
+        let mut errors = validator::ValidationErrors::new();
+        errors.add(
+            "name",
+            validator::ValidationError::new("INVALID_PHOTO_NAME")
+                .with_message(e.to_string().into()),
+        );
+        ApiError::ValidationError(errors)
+    })?;
+    db_listing::rename_listing_image(pool.get_ref(), listing_id, image_id, name.as_deref()).await?;
+    tracing::info!(%listing_id, %image_id, named = name.is_some(), "listing photo renamed");
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "id": image_id, "name": name })))
+}
+
+/// Registers the listing routes.
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -490,12 +1036,26 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_listing_by_id,
             update_listing,
             delete_listing,
+            get_listing_location,
             presign_batch,
+            delete_listing_image,
+            rename_listing_image,
             crate::reviews::get_review_token_info,
             crate::reviews::submit_review,
             crate::reviews::submit_host_reply,
             crate::reviews::get_listing_reviews_handler,
-            api_core::health::health_check,
+            crate::calendar::list_feeds,
+            crate::calendar::create_feed,
+            crate::calendar::update_feed,
+            crate::calendar::delete_feed,
+            crate::calendar::sync_now,
+            crate::calendar::list_blocks,
+            crate::calendar::create_block,
+            crate::calendar::delete_block,
+            crate::calendar::list_conflicts,
+            crate::calendar::acknowledge_conflict,
+            crate::calendar::overview,
+            crate::calendar::export_calendar,
         ),
         components(
             schemas(
@@ -503,6 +1063,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 UpdatedListingRequest,
                 ListingResponse,
                 common::models::ListingDetails,
+                common::location::ListingLocationResponse,
+                common::location::LocationPrivacy,
+                common::location::LocationPrecision,
                 pagination::Pagination,
                 common::models::ListingFilter,
                 common::models::ImagePresignRequest,
@@ -511,12 +1074,30 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::ReviewTokenInfoResponse,
                 common::models::NewReviewRequest,
                 common::models::HostReplyRequest,
-                common::models::ReviewResponse
+                common::models::ReviewResponse,
+                common::calendar::dto::CalendarFeedResponse,
+                common::calendar::dto::NewCalendarFeedRequest,
+                common::calendar::dto::UpdateCalendarFeedRequest,
+                common::calendar::dto::CreateCalendarFeedResponse,
+                common::calendar::dto::UpdateCalendarFeedResponse,
+                common::calendar::dto::FeedSyncResult,
+                common::calendar::dto::SyncOutcome,
+                common::calendar::FeedStatus,
+                common::calendar::BlockSource,
+                common::calendar::ConflictKind,
+                common::calendar::conflict::StaleReason,
+                common::calendar::dto::BlockedDateResponse,
+                common::calendar::dto::NewBlockedDateRequest,
+                common::calendar::dto::CalendarConflictResponse,
+                common::calendar::dto::CalendarConflictsResponse,
+                common::calendar::dto::CalendarOverview,
+                common::calendar::dto::CalendarOverviewListing
             )
         ),
         tags(
             (name = "listings", description = "Listing management endpoints"),
-            (name = "reviews", description = "Review and rating endpoints")
+            (name = "reviews", description = "Review and rating endpoints"),
+            (name = "calendar", description = "iCal calendar sync: feeds, blocks, conflicts and export")
         ),
     )]
     struct ApiDoc;
@@ -529,10 +1110,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
 
     cfg.service(
         web::scope("/api/v1/listings")
-            .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
-            )
             .route(
                 "",
                 web::get()
@@ -564,9 +1141,27 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
+                "/{id}/location",
+                web::get()
+                    .to(get_listing_location)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
                 "/{id}/images/presign",
                 web::post()
                     .to(presign_batch)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/images/{image_id}",
+                web::delete()
+                    .to(delete_listing_image)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/images/{image_id}",
+                web::patch()
+                    .to(rename_listing_image)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
@@ -598,13 +1193,15 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::delete()
                     .to(delete_price_override)
                     .wrap(from_fn(content_negotiation_middleware)),
-            ),
+            )
+            .configure(crate::calendar::configure_listing_routes),
     );
 
     crate::reviews::configure_routes(cfg);
+    crate::calendar::configure_routes(cfg);
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings/{id}/price-overrides",
@@ -616,16 +1213,21 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     responses(
         (status = 201, description = "Price override created", body = common::models::PriceOverride),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn create_price_override(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     req_body: web::Json<common::models::CreatePriceOverrideRequest>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "create_price_override")
+        .await?;
     let override_req = req_body.into_inner();
 
     if override_req.end_date <= override_req.start_date {
@@ -663,7 +1265,7 @@ async fn create_price_override(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}/price-overrides",
@@ -694,7 +1296,7 @@ async fn get_price_overrides(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     put,
     path = "/api/v1/listings/{id}/price-overrides/{override_id}",
@@ -707,16 +1309,21 @@ async fn get_price_overrides(
     responses(
         (status = 200, description = "Price override updated", body = common::models::PriceOverride),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn update_price_override(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<(Uuid, Uuid)>,
     req_body: web::Json<common::models::UpdatePriceOverrideRequest>,
 ) -> Result<impl Responder, ApiError> {
     let (listing_id, override_id) = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "update_price_override")
+        .await?;
     let override_req = req_body.into_inner();
 
     if let (Some(start), Some(end)) = (override_req.start_date, override_req.end_date)
@@ -760,7 +1367,7 @@ async fn update_price_override(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(claims, pool))]
 #[utoipa::path(
     delete,
     path = "/api/v1/listings/{id}/price-overrides/{override_id}",
@@ -776,10 +1383,13 @@ async fn update_price_override(
     )
 )]
 async fn delete_price_override(
+    claims: Claims,
     pool: web::Data<PgPool>,
     path: web::Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, ApiError> {
     let (listing_id, override_id) = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "delete_price_override")
+        .await?;
     db_listing::delete_price_override(pool.get_ref(), override_id, listing_id)
         .await
         .map_err(ApiError::Database)?;
@@ -789,4 +1399,20 @@ async fn delete_price_override(
 
 #[cfg(test)]
 #[path = "apis_test.rs"]
-mod tests;
+pub(crate) mod tests;
+
+#[cfg(test)]
+#[path = "location_input_tests.rs"]
+mod location_input_tests;
+
+#[cfg(test)]
+#[path = "public_location_tests.rs"]
+mod public_location_tests;
+
+#[cfg(test)]
+#[path = "listing_location_tests.rs"]
+mod listing_location_tests;
+
+#[cfg(test)]
+#[path = "stay_total_tests.rs"]
+mod stay_total_tests;

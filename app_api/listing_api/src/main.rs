@@ -20,13 +20,57 @@ use std::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+
     // Initialize tracing
-    api_core::tracing_utils::init_subscriber();
+    api_core::tracing_utils::init_subscriber(env!("CARGO_PKG_NAME"));
 
     tracing::info!("Starting application");
 
     // Get settings
     let config = settings::get_settings().context("Could not load settings")?;
+
+    config
+        .application
+        .validate_max_stay_nights()
+        .map_err(anyhow::Error::msg)
+        .context("Refusing to start")?;
+
+    // User tokens cannot be verified without it, and there is no fallback.
+    api_core::auth::jwt_secret().context("Refusing to start")?;
+
+    // Approximate listings can't be served without it, and exact coordinates
+    // are never served in its place (spec 103 §1.4).
+    let location_key = actix_web::web::Data::new(
+        listing_api::location_key::load(|key| std::env::var(key).ok())
+            .map_err(|e| {
+                tracing::error!(error = %e, "location offset key refused");
+                e
+            })
+            .context("Refusing to start")?,
+    );
+
+    // Calendar sync settings come from the environment only. Local-only
+    // toggles stop the service on Cloud Run.
+    let calendar_settings = settings::CalendarSyncSettings::from_process_env()
+        .map_err(|e| {
+            tracing::error!(error = %e, "invalid calendar sync settings");
+            anyhow::Error::msg(e)
+        })
+        .context("Refusing to start")?;
+    settings::check_cloud_guard(&calendar_settings, |key| std::env::var(key).ok())
+        .map_err(|e| {
+            tracing::error!(error = %e, "calendar sync settings refused on Cloud Run");
+            anyhow::Error::msg(e)
+        })
+        .context("Refusing to start")?;
+    let admin_base_url = std::env::var(listing_api::calendar::ADMIN_BASE_URL_ENV)
+        .unwrap_or_else(|_| "http://localhost:3012".to_string());
+    let calendar = actix_web::web::Data::new(listing_api::calendar::CalendarRuntime::new(
+        calendar_settings,
+        std::sync::Arc::new(api_core::email_publisher::EmailPublisher::from_env()),
+        admin_base_url,
+    ));
 
     // Create database connection pool
     tracing::info!("Connecting to database");
@@ -47,14 +91,20 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind(&address)
         .context(format!("Failed to bind to random port {}", address))?;
-    let _ = run(
+    let served = run(
         listener,
         db_connection_pool,
-        apis::configure_routes,
+        move |cfg: &mut actix_web::web::ServiceConfig| {
+            cfg.app_data(calendar.clone());
+            cfg.app_data(location_key.clone());
+            apis::configure_routes(cfg);
+        },
         config.clone(),
     )?
     .await
     .context("Server error");
 
-    Ok(())
+    // Send any buffered spans before the instance goes away.
+    api_core::tracing_utils::shutdown_telemetry().await;
+    served
 }

@@ -1,0 +1,100 @@
+//! Server entry point for the redesigned guest portal.
+
+use std::env;
+
+use tokio::net::TcpListener;
+use topcoat::asset::{AssetBundle, RouterBuilderAssetExt};
+use topcoat::cookie::CookieLayer;
+use topcoat::metadata::Metadata;
+use topcoat::router::{Router, RouterBuilderDiscoverExt};
+use topcoat::session::{SessionTokenStore, cookie::CookieTokenStore};
+use web_client::{TopcoatApiClient, jwt::ServiceJwt};
+use web_ui_common::map_config::MapConfig;
+use web_ui_common::security_headers::SecurityHeaders;
+use web_ui_common::site_config::{
+    GUEST_PORTAL_URL_ENV, SiteConfig, default_image_metadata, site_metadata,
+};
+
+use web_ui_guest::DEFAULT_PORT;
+
+static HOST_ENV: &str = "HOST";
+static PORT_ENV: &str = "PORT";
+static HSTS_ENV: &str = "ENABLE_HSTS";
+const DEFAULT_HOST: &str = "127.0.0.1";
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
+    web_ui_common::request_tracing::init(env!("CARGO_PKG_NAME"));
+
+    // Link the layout so Topcoat's discovery sees this crate's routes.
+    let _ = web_ui_guest::layout::guest_layout;
+
+    // Fail fast (spec 102 §1.1): canonical, Open Graph and sitemap URLs are
+    // built from GUEST_PORTAL_URL, never from the request's Host header.
+    let site = SiteConfig::from_env().inspect_err(|e| {
+        tracing::error!(
+            variable = GUEST_PORTAL_URL_ENV,
+            reason = %e,
+            "invalid site configuration; refusing to start"
+        );
+    })?;
+    let site_indexable = site.indexable();
+
+    // Fail fast: no fallback signing secret, and rendering any page panics
+    // without the asset bundle (topcoat-asset), so neither may be missing.
+    let service_jwt = ServiceJwt::from_env()?;
+    let assets = AssetBundle::load()?;
+
+    let host = env::var(HOST_ENV).unwrap_or_else(|_| DEFAULT_HOST.to_string());
+    let port = match env::var(PORT_ENV) {
+        Ok(raw) => raw.parse::<u16>()?,
+        Err(_) => DEFAULT_PORT,
+    };
+    let hsts = env::var(HSTS_ENV).is_ok_and(|v| v == "1" || v == "true");
+
+    let sessions = SessionTokenStore::new(CookieTokenStore::new().name("op_guest_session"));
+
+    // No `RuntimeLayer`: it needs 'unsafe-eval' (spec, Phase 0 spike results).
+    // Maps are an add-on: an unset or invalid MAP_TILES_BASE_URL turns them
+    // off with one warn (spec 103 §1.10). Registered only when on.
+    let map_config = MapConfig::from_env();
+
+    let builder = Router::builder()
+        .discover()
+        .layer(CookieLayer::new())
+        .with(sessions)
+        .with(TopcoatApiClient::from_env())
+        .with(service_jwt)
+        .with(site.base_url().clone())
+        .with(site)
+        // Site-wide head metadata; pages override fields (spec 102 §1.5).
+        .with(Metadata::from_fn(site_metadata))
+        .with(default_image_metadata());
+    let builder = match map_config.clone() {
+        Some(map) => builder.with(map),
+        None => builder,
+    };
+    let router = builder
+        .assets(assets)
+        .layer(
+            SecurityHeaders::new()
+                .with_hsts(hsts)
+                .indexable(site_indexable)
+                .noindex_prefixes(web_ui_guest::seo::PRIVATE_PREFIXES)
+                .with_storage_origin(common::gcs::emulator_endpoint())
+                .with_map_origin(map_config.as_ref()),
+        )
+        .layer(web_ui_common::request_tracing::RequestTracing)
+        .build();
+
+    let listener = TcpListener::bind((host.as_str(), port)).await?;
+    tracing::info!("Starting web_ui_guest on {host}:{port}");
+    let served = topcoat::serve(listener, router).await;
+    // Send any buffered spans before the instance goes away.
+    if let Err(e) = tokio::task::spawn_blocking(common::telemetry::shutdown).await {
+        tracing::warn!(error = %e, "Trace exporter shutdown task failed");
+    }
+    served?;
+    Ok(())
+}

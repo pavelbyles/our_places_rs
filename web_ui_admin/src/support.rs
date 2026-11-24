@@ -1,0 +1,248 @@
+use std::collections::HashSet;
+
+use common::models::{BookingResponse, CreateSessionRequest, ListingResponse, UserResponse};
+use topcoat::context::{Cx, try_context};
+use uuid::Uuid;
+use web_client::{
+    auth::token_hash_to_hex,
+    client::ListingSearchParams,
+    get_api_client,
+    jwt::ServiceJwt,
+    session::{ADMIN_NAMESPACE, AdminRole, AdminSession, require_admin, require_admin_role},
+};
+use web_ui_common::guard::guard_failure;
+use web_ui_common::shell_admin::AdminNavUser;
+
+/// Admin sessions last 7 days, refreshed on use (same as the legacy portal).
+const SESSION_TTL_SECONDS: i64 = 604_800;
+
+/// The signed-in admin or host (rejecting dispatch-only staff with 403), or
+/// the redirect / HX-Redirect / 403 / 503.
+pub async fn host_or_admin(cx: &Cx) -> topcoat::Result<AdminSession> {
+    require_admin(cx)
+        .await
+        .and_then(AdminSession::require_host_or_admin)
+        .map_err(|e| guard_failure(cx, e))
+}
+
+/// Any signed-in console actor allowed on turnover dispatch routes (`Admin`, `Host`, or `Staff`).
+pub async fn dispatch_actor(cx: &Cx) -> topcoat::Result<AdminSession> {
+    require_admin(cx).await.map_err(|e| guard_failure(cx, e))
+}
+
+/// The signed-in admin-role user (hosts get 403).
+pub async fn admin_only(cx: &Cx) -> topcoat::Result<AdminSession> {
+    require_admin_role(cx)
+        .await
+        .map_err(|e| guard_failure(cx, e))
+}
+
+/// The signed-in user for the shell, if any, with their unread guest
+/// messages. The badge is optional: if the count can't be fetched it is
+/// logged and left at 0, so a page never fails because of it.
+pub async fn nav_user(cx: &Cx) -> Option<AdminNavUser> {
+    let session = require_admin(cx).await.ok()?;
+    let unread_messages = if session.role == AdminRole::Staff {
+        0
+    } else {
+        unread_guest_messages(cx, &session).await
+    };
+    Some(AdminNavUser {
+        name: session.name,
+        email: session.email,
+        role: session.role,
+        unread_messages,
+    })
+}
+
+/// Default console landing path for each admin-portal role.
+pub fn default_landing_path(role: AdminRole) -> &'static str {
+    match role {
+        AdminRole::Staff => "/admin/turnovers",
+        AdminRole::Host | AdminRole::Admin => "/admin",
+    }
+}
+
+/// Validates and resolves the post-authentication redirect target by role.
+/// `Staff` users may only deep-link within `/admin/turnovers`; any other target
+/// (including `/`, `/admin`, or `/admin/bookings`) is forced to `/admin/turnovers`.
+pub fn post_login_target(role: AdminRole, raw_redirect: &str) -> &str {
+    let safe = web_client::redirect::safe_redirect(raw_redirect);
+    match role {
+        AdminRole::Staff => {
+            if safe == "/admin/turnovers"
+                || safe.starts_with("/admin/turnovers/")
+                || safe.starts_with("/admin/turnovers?")
+                || safe.starts_with("/admin/turnovers#")
+            {
+                safe
+            } else {
+                "/admin/turnovers"
+            }
+        }
+        AdminRole::Host | AdminRole::Admin => {
+            if safe == "/" {
+                "/admin"
+            } else {
+                safe
+            }
+        }
+    }
+}
+
+async fn unread_guest_messages(cx: &Cx, session: &AdminSession) -> i64 {
+    let token = match service_token(cx, session) {
+        Ok(token) => token,
+        Err(e) => {
+            tracing::warn!(user_id = %session.user_id, error = ?e, "no token for the unread badge");
+            return 0;
+        }
+    };
+    match common::app_client::booking_requests::get_unread_message_count(&token).await {
+        Ok(count) => count.unread_messages,
+        Err(e) => {
+            tracing::warn!(user_id = %session.user_id, error = %e, "unread guest messages not fetched; badge hidden");
+            0
+        }
+    }
+}
+
+/// A short-lived token for calling the backend as `user`.
+pub fn service_token(cx: &Cx, user: &AdminSession) -> topcoat::Result<String> {
+    let jwt = try_context::<ServiceJwt>(cx)
+        .ok_or_else(|| web_client::app_error("service JWT is not configured"))?;
+    jwt.mint(user.user_id)
+        .map_err(|e| web_client::app_error(e).into())
+}
+
+/// The portal role for a user's stored roles, if they may sign in here.
+pub fn portal_role(user: &UserResponse) -> Option<AdminRole> {
+    let has = |name: &str| user.roles.iter().any(|r| r.eq_ignore_ascii_case(name));
+    if has("admin") || has("superadmin") {
+        Some(AdminRole::Admin)
+    } else if has("host") {
+        Some(AdminRole::Host)
+    } else if has("staff") {
+        Some(AdminRole::Staff)
+    } else {
+        None
+    }
+}
+
+/// Signs `user` in to the admin portal: ends any existing session (fixation
+/// defence), starts a new one and stores it in the `admin` namespace.
+pub async fn start_admin_session(
+    cx: &Cx,
+    user: &UserResponse,
+    role: AdminRole,
+) -> Result<(), String> {
+    let api = get_api_client(cx);
+    if let Some(old) = topcoat::session::stop(cx).await.ok().flatten() {
+        let _ = api.delete_session(&token_hash_to_hex(&old)).await;
+    }
+    let session = topcoat::session::start(cx)
+        .await
+        .map_err(|e| format!("failed to start admin session: {e}"))?;
+    let name = format!("{} {}", user.first_name, user.last_name)
+        .trim()
+        .to_string();
+    let request = CreateSessionRequest {
+        token_hash: token_hash_to_hex(&session.token_hash),
+        user_id: user.id,
+        email: user.email.clone(),
+        name: if name.is_empty() {
+            user.email.clone()
+        } else {
+            name
+        },
+        role: match role {
+            AdminRole::Admin => "admin".to_string(),
+            AdminRole::Host => "host".to_string(),
+            AdminRole::Staff => "staff".to_string(),
+        },
+        namespace: ADMIN_NAMESPACE.to_string(),
+        ttl_seconds: SESSION_TTL_SECONDS,
+    };
+    if let Err(e) = api.create_session(&request).await {
+        let _ = topcoat::session::stop(cx).await;
+        return Err(format!("failed to store admin session: {e}"));
+    }
+    Ok(())
+}
+
+/// Listings the user may manage: all for admins, their own for hosts.
+pub async fn scoped_listings(cx: &Cx, user: &AdminSession) -> Vec<ListingResponse> {
+    if user.role == AdminRole::Staff {
+        return Vec::new();
+    }
+    let params = ListingSearchParams {
+        per_page: Some(100),
+        user_id: (user.role == AdminRole::Host).then_some(user.user_id),
+        include_inactive: true,
+        ..Default::default()
+    };
+    let listings = get_api_client(cx)
+        .search_listings(params)
+        .await
+        .unwrap_or_default();
+    match user.role {
+        AdminRole::Admin => listings,
+        // Defence in depth: never show a host another host's listing.
+        AdminRole::Host => listings
+            .into_iter()
+            .filter(|l| l.user_id == user.user_id)
+            .collect(),
+        AdminRole::Staff => Vec::new(),
+    }
+}
+
+/// Bookings the user may see: all for admins, their listings' for hosts.
+pub async fn scoped_bookings(
+    cx: &Cx,
+    user: &AdminSession,
+    listings: &[ListingResponse],
+) -> Vec<BookingResponse> {
+    if user.role == AdminRole::Staff {
+        return Vec::new();
+    }
+    // booking_api already scopes the list to the caller; the host filter
+    // below is defence in depth.
+    let all = match service_token(cx, user) {
+        Ok(token) => get_api_client(cx)
+            .get_all_bookings(Some(1), Some(100), &token)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(user_id = %user.user_id, error = ?e, "failed to load bookings");
+                Vec::new()
+            }),
+        Err(_) => {
+            tracing::error!(user_id = %user.user_id, "failed to load bookings: could not mint API token");
+            Vec::new()
+        }
+    };
+    match user.role {
+        AdminRole::Admin => all,
+        AdminRole::Host => {
+            let own: HashSet<Uuid> = listings.iter().map(|l| l.id).collect();
+            all.into_iter()
+                .filter(|b| own.contains(&b.listing_id))
+                .collect()
+        }
+        AdminRole::Staff => Vec::new(),
+    }
+}
+
+pub use common::csv::csv_cell;
+
+#[cfg(test)]
+mod tests {
+    use super::csv_cell;
+
+    #[test]
+    fn csv_cells_are_quoted_and_formula_safe() {
+        assert_eq!(csv_cell("Villa \"A\""), "\"Villa \"\"A\"\"\"");
+        assert_eq!(csv_cell("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"");
+        assert_eq!(csv_cell("-1"), "\"'-1\"");
+        assert_eq!(csv_cell("ABC123"), "\"ABC123\"");
+    }
+}

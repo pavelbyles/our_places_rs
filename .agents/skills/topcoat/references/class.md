@@ -1,17 +1,19 @@
-The [`class!`] macro builds a [`topcoat::view::Class`] value: a space-separated list of HTML classes assembled from individual entries.
+The [`class!`] macro builds a [`topcoat::view::Class`] value by joining HTML class names with spaces.
 
-Use it in the value position of a `class` attribute when the list mixes static and conditional parts:
+Use it to combine base classes, variants, optional classes, conditional classes, and forwarded classes. It handles the spaces between entries, so callers do not need to format or concatenate a class list. Keep a fixed class list as an ordinary `class="btn btn-lg"` attribute.
+
+Pass the result directly as the value of a `class` attribute:
 
 ```rust
 # #[topcoat::view::component]
-# async fn example() -> topcoat::Result {
-use topcoat::view::{class, view};
+# async fn example(cx: &topcoat::context::Cx) -> topcoat::Result<impl topcoat::view::View> {
+use topcoat::view::{View, class, view};
 
 let is_active = true;
 
-view! {
+Ok(view! {
     <button class=(class!("btn", "btn-lg", "active" if is_active))>"Save"</button>
-}
+})
 # }
 ```
 
@@ -25,47 +27,68 @@ The body is a comma-separated list of entries. Each entry is a Rust expression, 
 
 ```rust
 # #[topcoat::view::component]
-# async fn example() -> topcoat::Result {
-use topcoat::view::{class, view};
+# async fn example(cx: &topcoat::context::Cx) -> topcoat::Result<impl topcoat::view::View> {
+use topcoat::view::{View, class, view};
 
 let variant: Option<&str> = Some("primary");
 let sizes = vec!["px-4".to_owned(), "py-2".to_owned()];
 let enabled = false;
 
-view! {
+Ok(view! {
     <button class=(class!(
         "btn",
         variant,
         sizes,
         "cursor-pointer" if enabled else "opacity-50",
     ))>"Save"</button>
-}
+})
 # }
 ```
 
-An entry can be any value implementing [`ClassViewParts`]: string types, `Option`s of them, a `Vec` or array of entries, another [`Class`], or a captured attribute value ([`AttributeValue`]) taken from an [`Attributes`] collection. Implement the trait for your own types to use them as entries.
+Entries must implement [`ClassViewParts`]. This includes strings, optional values, and collections of entries. Implement the trait to use your own types.
 
 # Absent entries
 
-An absent entry is skipped without leaving a leftover space: `None`, empty strings, and entries whose condition is false contribute neither text nor a separator. When every entry is absent, the surrounding element omits the whole `class` attribute:
+Absent entries contribute no text or separator. This includes `None`, empty strings, and entries with a false condition. When every entry is absent, the element omits the `class` attribute:
 
 ```rust
 # #[topcoat::view::component]
-# async fn example() -> topcoat::Result {
-use topcoat::view::{class, view};
+# async fn example(cx: &topcoat::context::Cx) -> topcoat::Result<impl topcoat::view::View> {
+use topcoat::view::{View, class, view};
 
 let variant: Option<&str> = None;
 
 // Renders `<p></p>`.
-view! {
+Ok(view! {
     <p class=(class!(variant, "active" if false))></p>
-}
+})
 # }
+```
+
+# Forwarded classes
+
+When a component accepts an attribute collection, remove its `class` entry and combine it with the component's classes. Forward the remaining attributes separately:
+
+```rust
+use topcoat::{
+    Result,
+    context::Cx,
+    view::{Attributes, Child, View, class, component, view},
+};
+
+#[component]
+async fn panel(cx: &Cx, #[default] mut attrs: Attributes, #[default] child: Child<'_>) -> Result<impl View> {
+    Ok(view! {
+        <section class=(class!("panel", attrs.remove("class"))) (attrs)>
+            (child)
+        </section>
+    })
+}
 ```
 
 # Static class lists
 
-Use `class!` for a class list that never changes too. It renders faster than the same string written as a `&'static str` constant:
+Use [`StaticClass`] to store a literal class list in a constant:
 
 ```rust
 use topcoat::view::{StaticClass, class};
@@ -73,12 +96,12 @@ use topcoat::view::{StaticClass, class};
 const BUTTON: StaticClass = class!("btn btn-lg rounded");
 ```
 
-A `class!` value takes its type from its entries. A list of literals always has the same one, named by [`StaticClass`]; anything else is only practical to hold in a `let` binding, whose type is inferred.
+A class list's type depends on its entries. Use a `let` binding to let Rust infer the type when the list contains expressions.
 
 [`Attributes`]: struct.Attributes.html
 [`Class`]: struct.Class.html
 [`StaticClass`]: type.StaticClass.html
 [`ClassViewParts`]: trait.ClassViewParts.html
-[`AttributeValue`]: struct.AttributeValue.html
+[`AttributeValue`]: enum.AttributeValue.html
 [`class!`]: macro.class.html
 [`topcoat::view::Class`]: struct.Class.html

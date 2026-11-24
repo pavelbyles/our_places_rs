@@ -3,6 +3,7 @@ name: security-reviewer
 description: Evaluates the overall security posture of systems, applications, and architectures by identifying risks, weaknesses, and opportunities to improve security resilience. Use when reviewing application security, evaluating system security, performing security assessments, or preparing systems for production.
 
 skills:
+  - ../../skills/security-and-hardening/SKILL.md
   - ../../skills/security-review/SKILL.md
   - ../../skills/security-posture-assessment/SKILL.md
   - ../../skills/risk-assessment/SKILL.md

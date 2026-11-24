@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { workspace = true, features = ["macros"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 uuid = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
@@ -16,17 +16,25 @@ dotenvy = { workspace = true }
 validator = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+url = { workspace = true }
 
 strum = "0.28.0"
 strum_macros = "0.28.0"
 utoipa.workspace = true
-common = { path = "../common" }
-bcrypt = "0.19.0"
+common = { workspace = true, features = ["sqlx"] }
+bcrypt = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-dotenvy = "0.15.7"
+dotenvy = { workspace = true }
 rust_decimal_macros = { workspace = true }
+tracing-test = "0.2"
 sqlx-db-tester = { version = "0.7.1", default-features = false, features = [
     "postgres",
 ] }
+
+[[bin]]
+name = "seed-db"
+path = "src/bin/seed_db.rs"

@@ -1,11 +1,53 @@
+//! Domain types, pricing and clients shared by the services and portals.
+#![deny(missing_docs)]
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod app_client;
+/// User permission attributes.
 pub mod auth;
+pub mod availability;
+/// Enquiries and requests to book: booking modes, the request lifecycle and response windows.
+pub mod booking_request;
+/// iCal calendar sync: feed parsing and writing, URL rules and conflicts.
+pub mod calendar;
+pub mod cancellation;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod cloud_logging;
+/// CSV export.
+pub mod csv;
+pub mod currency;
+/// Email payloads and templates.
+pub mod email;
+pub mod exchange_rate;
+/// Google Cloud Storage signed URLs.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gcs;
+/// Looks up places from coordinates.
 pub mod geocode;
+/// Authenticated HTTP client for calls between services.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod http_client;
+/// Typed sections of a listing's `listing_details` (ribbon, suites, amenity groups, policies).
+pub mod listing_details;
+/// Listing location privacy and approximate public points.
+pub mod location;
+/// Request and response types shared across services.
 pub mod models;
+/// How money amounts are shown to people.
+pub mod money;
+/// Host payout states and ledger types.
+pub mod payout;
+/// Stay pricing.
 pub mod pricing;
+/// Promo code rules: validation, usage limits and discount amounts.
+pub mod promo;
+pub mod query;
+/// Static reference data, such as statutory tax rates.
 pub mod reference;
+pub mod slug;
+/// Tax document types and numbering.
+pub mod tax_document;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod telemetry;
+/// Turnover dispatch, cleaning status transitions, and staff roster contracts.
+pub mod turnover;

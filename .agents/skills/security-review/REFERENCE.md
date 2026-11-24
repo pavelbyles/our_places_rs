@@ -7,7 +7,7 @@
 | **A01: Broken Access Control** | Verify IDOR checks on entity IDs (e.g. `user_id`, `booking_id`). Ensure JWT claims match target resources. |
 | **A02: Cryptographic Failures** | Ensure sensitive data at rest and in transit is encrypted. Verify no plaintext passwords or secrets in code/logs. |
 | **A03: Injection** | Ensure all SQL queries use parameterized `sqlx::query!` macros. Validate regex and shell command inputs. |
-| **A04: Insecure Design** | Check rate limiting, lockout policies, and availability hold expirations (e.g. 15-minute lock window). |
+| **A04: Insecure Design** | Check rate limiting, lockout policies, and availability hold expirations (e.g. the configured `expires_at` hold window). |
 | **A05: Security Misconfiguration** | Check CORS configurations, Cloud Run scale-to-zero container permissions, and default ports. |
 | **A06: Vulnerable Components** | Check `Cargo.lock` dependencies for known vulnerabilities (`cargo audit`). |
 | **A07: Identification & Auth** | Verify JWT signature verification, bcrypt hashing work factor, and shadow user promotion. |

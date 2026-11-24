@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO \"user\" (id, email, password_hash, first_name, last_name, default_currency)\n               VALUES ($1, 'host_notify@test.com', 'hash', 'Host', 'User', 'USD'),\n                      ($2, 'guest_notify@test.com', 'hash', 'Guest', 'User', 'USD')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7f7084199a72656bd69ebb8c704a6bad37d5a467b0dd918281988bdc1248cc17"
+}

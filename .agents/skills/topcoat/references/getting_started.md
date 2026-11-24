@@ -1,84 +1,48 @@
 # Getting started
 
-This guide walks through creating a new Topcoat project, installing the CLI, and starting the dev server.
-
-## Create a new project
-
-Start with a fresh Cargo binary:
-
-```sh
-cargo new hello-world
-cd hello-world
-```
-
-Add `topcoat` and `tokio`:
-
-```sh
-cargo add topcoat
-cargo add tokio --features rt-multi-thread,macros
-```
-
-Replace `src/main.rs` with:
-
-```rust
-use topcoat::{
-    Result,
-    router::{Router, RouterBuilderDiscoverExt, page},
-    view::{component, view},
-};
-
-#[tokio::main]
-async fn main() {
-    topcoat::start(Router::builder().discover().build()).await.unwrap();
-}
-
-#[page("/")]
-async fn home() -> Result {
-    view! {
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <title>"Hello world"</title>
-                topcoat::dev::script()
-            </head>
-            <body>
-                hello(name: "World")
-            </body>
-        </html>
-    }
-}
-
-#[component]
-async fn hello(name: &str) -> Result {
-    view! {
-        <h1>"Hello, " (name) "!"</h1>
-    }
-}
-```
-
-`cargo run` is enough to serve the app (by default on <http://127.0.0.1:3000>), but the Topcoat CLI is what you'll want for day-to-day development.
+Create and run a Topcoat app with `topcoat new`. For setup without the generator, see [Manual setup](https://github.com/tokio-rs/topcoat/blob/main/docs/manual_setup.md).
 
 ## Install the CLI
 
-The Topcoat CLI crate contains a binary used for the dev server, source formatting, and asset bundling. Install it from crates.io:
+Install [Rust and Cargo](https://www.rust-lang.org/tools/install), then install the Topcoat CLI:
 
 ```sh
 cargo install topcoat-cli
 ```
 
-This installs a single `topcoat` executable. It is also available as a Cargo subcommand (`cargo topcoat ...`) if you prefer. Make sure to [include it in your `PATH` environment variable](https://rust-lang.org/tools/install/).
+Make sure Cargo's binary directory is on your `PATH` so you can run `topcoat`. You can also invoke it as `cargo topcoat`.
 
-## Start the dev server
+## Create an app
 
-From the project root:
+Create an app with the recommended settings:
+
+```sh
+topcoat new hello-world --recommended
+cd hello-world
+```
+
+This creates an app with module routing, Topcoat's browser runtime, Tailwind CSS, Topcoat UI, icons, fonts, and a todo example backed by Toasty and SQLite.
+
+Omit `--recommended` to select features interactively, or use `--minimal` for a small app without a database or browser interaction library. See the [`topcoat new` reference](https://github.com/tokio-rs/topcoat/blob/main/docs/cli/new.md) for options.
+
+## Run the app
+
+The recommended setup includes database models. Generate and apply a migration to create their tables:
+
+```sh
+cargo run -- toasty migration generate
+cargo run -- toasty migration apply
+```
+
+Run these commands again after changing a model. SQLite stores the data in `data.db`. Apps without database models, including the minimal preset, can skip this step.
+
+Start the development server:
 
 ```sh
 topcoat dev
 ```
 
-This command builds the app, bundles assets, and starts the server. It watches your source directories and rebuilds, rebundles, and restarts the app on changes. Pages that include `topcoat::dev::script()` reload automatically once the new build is ready. Press `r` in the terminal to trigger a rebuild manually.
-
-Open <http://127.0.0.1:3000> and you should see **Hello, World!**.
+Open <http://127.0.0.1:3000>. Pages and layouts are in `src/app.rs` and `src/app/`. The dev server rebuilds the app and refreshes the page when source files change. Press `r` in the terminal to rebuild manually.
 
 To override the bind address, set `HOST` and `PORT` before running:
 
@@ -86,10 +50,6 @@ To override the bind address, set `HOST` and `PORT` before running:
 HOST=0.0.0.0 PORT=8080 topcoat dev
 ```
 
-## Improving build times
+For ways to reduce rebuild times, see the Cargo book's [build performance chapter](https://doc.rust-lang.org/cargo/guide/build-performance.html).
 
-As your app grows, so does the time each rebuild takes. The [build performance chapter](https://doc.rust-lang.org/cargo/guide/build-performance.html) of the Cargo book collects general advice for speeding up compilation, most of which applies directly to a Topcoat project.
-
-## Where to next
-
-More documentation is available in the [README](https://github.com/tokio-rs/topcoat/tree/main#learn-topcoat), which links a guide for every part of the framework.
+See the [guide index](https://github.com/tokio-rs/topcoat/tree/main#learn-topcoat) for routing, components, and other features.

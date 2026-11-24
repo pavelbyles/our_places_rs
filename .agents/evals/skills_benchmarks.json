@@ -57,8 +57,8 @@
           "reason": "Must use monadic combinator .and_then() for step chaining"
         },
         {
-          "type": "not_contains",
-          "value": "match ",
+          "type": "not_contains_pattern",
+          "pattern": "^([ \\t]*)(?=\\S)[^\\n]*\\b(?:match|if let)\\b[^\\n]*\\{[ \\t]*\\n(?:\\1[ \\t]+[^\\n]*\\n|[ \\t]*\\n)*?\\1[ \\t]+[^\\n]*\\b(?:match|if let)\\b",
           "reason": "Avoid multi-level nested match pyramids in favor of combinators"
         },
         {
@@ -148,6 +148,67 @@
           "type": "contains",
           "value": "sanity-check",
           "reason": "Must execute verification/sanity checks before pushing fix"
+        }
+      ]
+    },
+    {
+      "skill_id": "sonarqube-guard",
+      "name": "Static Analysis & Doc Coverage Guard Test",
+      "prompt": "Define a public Rust enum `NotificationChannel` with variants `Email`, `Sms`, and `Push`, and a public struct `NotificationConfig` with fields `channel` and `api_key_env`. Ensure the code adheres to SonarQube and DeepSource quality standards.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "///",
+          "reason": "Must provide doc comments on all public types, fields, and variants (RS-D1001)"
+        },
+        {
+          "type": "not_contains",
+          "value": ".unwrap()",
+          "reason": "Production code paths must never use .unwrap()"
+        }
+      ]
+    },
+    {
+      "skill_id": "retro",
+      "name": "Session Retrospective Environment Optimization Test",
+      "prompt": "Run a retrospective on our recent coding session where cargo check failed due to a missing sqlx query prepare step and we spent 4 tool calls finding common/src/reference.rs.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "Navigation",
+          "reason": "Must categorize file discovery friction under Navigation"
+        },
+        {
+          "type": "contains",
+          "value": "Automated Checks",
+          "reason": "Must categorize missing sqlx prepare under Automated Checks & Guardrails"
+        },
+        {
+          "type": "contains",
+          "value": "AGENTS.md",
+          "reason": "Must propose actionable steering file or guardrail updates"
+        }
+      ]
+    },
+    {
+      "skill_id": "plan-eng-review",
+      "name": "Multi-Agent Engineering Plan Review Test",
+      "prompt": "Orchestrate an engineering review panel for the implementation plan in docs/plans/plan-92-feat-reservation-changes.md against CONSTRAINTS.md.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "Lead Architect",
+          "reason": "Must dispatch specialized review panelists including Lead Architect"
+        },
+        {
+          "type": "contains",
+          "value": "CONSTRAINTS.md",
+          "reason": "Must evaluate plan compliance against CONSTRAINTS.md"
+        },
+        {
+          "type": "contains_pattern",
+          "pattern": "Scorecard|Review Findings|Gating Criteria",
+          "reason": "Must output structured panelist findings and scorecard"
         }
       ]
     }

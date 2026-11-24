@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM email_outbox\n        WHERE status = 'pending' AND template_id LIKE 'calendar\\_%'\n          AND created_at < now() - ($1::int8 * INTERVAL '1 second')\n          AND attempts < max_retries\n        ORDER BY created_at\n        LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9d8688e53ad0984b22ce6a3080fc028188ad182d58c21577f3b7da3b118dd054"
+}

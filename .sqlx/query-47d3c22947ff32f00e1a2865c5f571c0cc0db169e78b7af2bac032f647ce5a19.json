@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT ON (r.base) r.base AS \"base!\", r.rate AS \"rate!\", r.derived AS \"derived!\"\n        FROM (\n            SELECT base_currency AS base, rate, FALSE AS derived, effective_at, updated_at\n              FROM currency_exchange_rates\n             WHERE base_currency = ANY($1) AND target_currency = $2\n               AND effective_at <= $3 AND ($4 OR retired_at IS NULL)\n            UNION ALL\n            SELECT target_currency AS base, rate, TRUE AS derived, effective_at, updated_at\n              FROM currency_exchange_rates\n             WHERE target_currency = ANY($1) AND base_currency = $2\n               AND effective_at <= $3 AND ($4 OR retired_at IS NULL)\n        ) r\n        ORDER BY r.base, r.derived, r.effective_at DESC, r.updated_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "base!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "rate!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "derived!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Text",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "47d3c22947ff32f00e1a2865c5f571c0cc0db169e78b7af2bac032f647ce5a19"
+}

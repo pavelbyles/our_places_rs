@@ -1,101 +1,101 @@
-Components are async functions annotated with [`#[component]`][`component`]. They return a [`View`] through the usual Topcoat [`Result`] type, and can take typed parameters like any other Rust function.
+The [`#[component]`][`component`] attribute defines a reusable view. The function must be `async` and take `cx: &Cx` as its first parameter, even when unused. Additional parameters define its props. The function must return [`Result<impl View>`][`Result`].
 
 ```rust
 use topcoat::{
     Result,
-    view::{component, view},
+    context::Cx,
+    view::{View, class, component, view},
 };
 
 #[component]
-async fn badge(label: &str, tone: &str) -> Result {
-    view! {
-        <span class=(format!("badge badge-{tone}"))>
+async fn badge(cx: &Cx, label: &str, is_success: bool) -> Result<impl View> {
+    Ok(view! {
+        <span class=(class!("badge", "badge-success" if is_success))>
             (label)
         </span>
-    }
+    })
 }
 ```
 
 # Calling Components
 
-Call components inside [`view!`] with a call syntax similar to function calls, but with named parameter syntax:
+Call components inside [`view!`] with named arguments. Omit `cx` from the call; the view supplies it automatically:
 
 ```rust
-# use topcoat::{Result, view::*};
+# use topcoat::{Result, context::Cx, view::*};
 # #[component]
-# async fn badge(label: &str, tone: &str) -> Result { view! { <span>(label)(tone)</span> } }
+# async fn badge(cx: &Cx, label: &str, is_success: bool) -> Result<impl View> { Ok(view! { <span class=(topcoat::view::class!("badge", "badge-success" if is_success))>(label)</span> }) }
 # #[component]
-# async fn example() -> Result {
-view! {
+# async fn example(cx: &Cx) -> Result<impl View> {
+Ok(view! {
     <header>
         badge(
             label: "New",
-            tone: "success",
+            is_success: true,
         )
     </header>
-}
+})
 # }
 ```
 
-The name `key` is reserved: a `key:` argument keys the invocation's identity instead of setting a prop, so a component cannot declare a `key` parameter. See the keys section of the [`view!`] guide.
-
 # Child Content
 
-If a component accepts a parameter named `child` with type [`View`], any extra view nodes in the call are collected and passed as that child view.
+If a component accepts a parameter named `child` with type [`Child`], any extra view nodes in the call are collected and passed as that child view. Give it `#[default]` so the component can also be called without children.
 
 ```rust
 use topcoat::{
     Result,
-    view::{View, component, view},
+    context::Cx,
+    view::{Child, View, component, view},
 };
 
 #[component]
-async fn panel(title: &str, child: View) -> Result {
-    view! {
+async fn panel(cx: &Cx, title: &str, #[default] child: Child<'_>) -> Result<impl View> {
+    Ok(view! {
         <section class="panel">
             <h2>(title)</h2>
             <div class="panel-body">
                 (child)
             </div>
         </section>
-    }
+    })
 }
 
 # #[component]
-# async fn badge(label: &str, tone: &str) -> Result { view! { <span>(label)(tone)</span> } }
+# async fn badge(cx: &Cx, label: &str, is_success: bool) -> Result<impl View> { Ok(view! { <span class=(topcoat::view::class!("badge", "badge-success" if is_success))>(label)</span> }) }
 # #[component]
-# async fn example() -> Result {
-view! {
+# async fn example(cx: &Cx) -> Result<impl View> {
+Ok(view! {
     panel(
         title: "Profile",
         // Child nodes:
         <p>"Account details"</p>
         badge(
             label: "Active",
-            tone: "success",
+            is_success: true,
         )
     )
-}
+})
 # }
 ```
 
-The trailing child nodes desugar to a `child` parameter whose value is a [`view! { ... }`][`view!`] containing those nodes.
+You can also pass a view explicitly as the `child` argument.
 
 # Parameter attributes
 
-A component's properties can be modified with attributes:
+A parameter can have these attributes:
 
-- `#[default]` makes the parameter optional; when not passed, it is set to `Default::default()`. Use `#[default(expr)]` to supply a custom fallback instead, evaluated only when the parameter is omitted. The type need not implement `Default` in that case.
-- `#[into]` lets callers pass anything that converts via `Into`. While you could use `impl Into<T>` instead, using `#[into]` calls `.into()` outside of your function body and prevents many monomorphizations of the function itself.
+- `#[default]` uses `Default::default()` when the caller omits the argument. `#[default(expr)]` uses a custom fallback instead. The fallback runs only when the argument is omitted and does not require the type to implement `Default`.
+- `#[into]` accepts any value that converts to the parameter's type through `Into`. The component receives the converted value.
 
 ```rust
-# use topcoat::{Result, view::{component, view}};
+# use topcoat::{Result, context::Cx, view::{View, component, view}};
 # #[derive(Default)]
 # struct Tone;
 #[component]
-async fn badge(#[into] label: String, #[default] tone: Tone, #[default(80)] max_length: usize) -> Result {
+async fn badge(cx: &Cx, #[into] label: String, #[default] tone: Tone, #[default(80)] max_length: usize) -> Result<impl View> {
     // ...
-#     view! { <span>(label)</span> }
+#     Ok(view! { <span>(label)</span> })
 }
 ```
 
@@ -104,80 +104,74 @@ async fn badge(#[into] label: String, #[default] tone: Tone, #[default(80)] max_
 Components can be generic. Depending on usage, you may need to declare the type as `Send` or `Sync`:
 
 ```rust
-# use topcoat::{Result, view::{component, view}};
+# use topcoat::{Result, context::Cx, view::{View, component, view}};
 #[component]
-async fn count<T: Send + Sync>(items: Vec<T>) -> Result {
-    view! { <span>(items.len())</span> }
+async fn count<T: Send + Sync>(cx: &Cx, items: Vec<T>) -> Result<impl View> {
+    Ok(view! { <span>(items.len())</span> })
 }
 ```
 
 `impl Trait` parameters work too:
 
 ```rust
-# use topcoat::{Result, view::{component, view}};
+# use topcoat::{Result, context::Cx, view::{View, component, view}};
 #[component]
-async fn shout(label: impl Into<String> + Send) -> Result {
-    view! { <b>(label.into().to_uppercase())</b> }
+async fn shout(cx: &Cx, label: impl Into<String> + Send) -> Result<impl View> {
+    Ok(view! { <b>(label.into().to_uppercase())</b> })
 }
 ```
 
-Prefer the `#[into]` attribute over `impl Into<T>` to reduce generic instantiations of your component body.
+Prefer `#[into]` when the component only needs the converted value.
 
 # Request Context
 
-Components can ask for the current request context by declaring a `cx` parameter that borrows [`Cx`]:
+Every component receives the current request context through its `cx: &Cx` parameter. Use it to read context values or request data:
 
 ```rust
 use topcoat::{
     Result,
     context::Cx,
     router::request::uri,
-    view::{component, view},
+    view::{View, component, view},
 };
 
 #[component]
-async fn current_path(cx: &Cx) -> Result {
-    view! {
+async fn current_path(cx: &Cx) -> Result<impl View> {
+    Ok(view! {
         <span>(uri(cx).path())</span>
-    }
+    })
 }
 ```
 
 
 # Recursive Components
 
-A component calling itself, either directly or indirectly, causes a dependency cycle in the created `Future`. To fix the issue, use `#[component(boxed)]` on one of the components in the cycle:
+A recursive component needs to box its view with [`boxed`](trait.ViewExt.html#method.boxed). This gives the view a type with a known size:
 
 ```rust
 use topcoat::{
     Result,
-    view::{component, view},
+    context::Cx,
+    view::{View, ViewExt, component, view},
 };
 
-struct Comment {
-    body: String,
-    replies: Vec<Comment>,
-}
-
-#[component(boxed)]
-async fn comment_thread(comment: &Comment) -> Result {
-    view! {
-        <li>
-            (&comment.body)
-            if !comment.replies.is_empty() {
-                <ul>
-                    for reply in &comment.replies {
-                        comment_thread(comment: reply)
-                    }
-                </ul>
-            }
-        </li>
+#[component]
+async fn countdown(cx: &Cx, n: u32) -> Result<impl View> {
+    Ok(view! {
+        <li>(n)</li>
+        if n > 0 {
+            countdown(n: n - 1)
+        }
     }
+    .boxed())
 }
 ```
 
+For mutually recursive components, boxing one view in the cycle is enough.
+
 [`Cx`]: ../context/struct.Cx.html
 [`Result`]: ../type.Result.html
-[`View`]: struct.View.html
+[`Child`]: struct.Child.html
+[`View`]: trait.View.html
 [`component`]: attr.component.html
 [`view!`]: macro.view.html

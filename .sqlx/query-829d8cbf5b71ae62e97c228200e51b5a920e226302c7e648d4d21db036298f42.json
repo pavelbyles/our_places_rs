@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE promo_code_redemption SET released_at = NOW() WHERE booking_id = $1 AND released_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "829d8cbf5b71ae62e97c228200e51b5a920e226302c7e648d4d21db036298f42"
+}
