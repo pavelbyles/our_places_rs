@@ -201,7 +201,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             sessions::create_session_handler,
             sessions::get_session_handler,
             sessions::delete_session_handler,
-            sessions::revoke_user_sessions_handler,
         ),
         components(
             schemas(
@@ -261,19 +260,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
-                "/",
-                web::get()
-                    .to(admin::get_all_users)
-                    .wrap(from_fn(content_negotiation_middleware)),
-            )
-            .route(
                 "",
-                web::post()
-                    .to(registration::create_user)
-                    .wrap(from_fn(content_negotiation_middleware)),
-            )
-            .route(
-                "/",
                 web::post()
                     .to(registration::create_user)
                     .wrap(from_fn(content_negotiation_middleware)),
@@ -294,18 +281,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/user/{id}",
                 web::delete()
                     .to(admin::soft_delete_user)
-                    .wrap(from_fn(content_negotiation_middleware)),
-            )
-            .route(
-                "/user/{id}/sessions",
-                web::delete()
-                    .to(sessions::revoke_user_sessions_handler)
-                    .wrap(from_fn(content_negotiation_middleware)),
-            )
-            .route(
-                "/{id}/sessions",
-                web::delete()
-                    .to(sessions::revoke_user_sessions_handler)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(

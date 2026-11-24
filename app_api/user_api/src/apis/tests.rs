@@ -82,7 +82,7 @@ async fn test_create_user_booker_with_profile() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
 
@@ -126,7 +126,7 @@ async fn test_create_user_host_with_profile() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
 
@@ -166,7 +166,7 @@ async fn test_create_user_admin() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
 
@@ -212,7 +212,7 @@ async fn test_create_user_mixed_roles() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
 
@@ -256,7 +256,7 @@ async fn test_update_user_add_role_and_profile() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&create_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -317,7 +317,7 @@ async fn test_update_admin_user_password_and_protection() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&create_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -420,7 +420,7 @@ async fn test_create_user_booker_missing_profile() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
 
@@ -457,7 +457,7 @@ async fn test_create_user_host_missing_profile() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
 
@@ -502,18 +502,14 @@ async fn test_get_all_users_with_filters() {
             }
         });
         let req = test::TestRequest::post()
-            .uri("/api/v1/users/")
+            .uri("/api/v1/users")
             .set_json(&req_body)
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 201);
     }
 
-    // 1. Test get all (pagination default) - test BOTH trailing slash and without trailing slash
-    let req_with_slash = test::TestRequest::get().uri("/api/v1/users/").to_request();
-    let resp_with_slash = test::call_service(&app, req_with_slash).await;
-    assert_eq!(resp_with_slash.status(), 200);
-
+    // 1. Test get all (pagination default)
     let req_without_slash = test::TestRequest::get().uri("/api/v1/users").to_request();
     let resp_without_slash = test::call_service(&app, req_without_slash).await;
     assert_eq!(resp_without_slash.status(), 200);
@@ -553,7 +549,7 @@ async fn test_get_all_users_with_filters() {
 
     // 2. Test search filter (email)
     let req = test::TestRequest::get()
-        .uri("/api/v1/users/?search=alice")
+        .uri("/api/v1/users?search=alice")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -563,7 +559,7 @@ async fn test_get_all_users_with_filters() {
 
     // 3. Test search filter (first name) - partial match
     let req = test::TestRequest::get()
-        .uri("/api/v1/users/?search=Bo")
+        .uri("/api/v1/users?search=Bo")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -573,7 +569,7 @@ async fn test_get_all_users_with_filters() {
 
     // 4. Test search filter (last name) - partial match
     let req = test::TestRequest::get()
-        .uri("/api/v1/users/?search=Chocol")
+        .uri("/api/v1/users?search=Chocol")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -610,7 +606,7 @@ async fn test_resend_verification_success() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -684,7 +680,7 @@ async fn test_resend_verification_already_verified() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -739,7 +735,7 @@ async fn test_verify_user_lowercase_and_whitespace() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -787,7 +783,7 @@ async fn test_soft_restore_hard_delete_user() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -863,7 +859,7 @@ mod currency_inactive_tests {
         let resp = test::call_service(
             &app,
             test::TestRequest::post()
-                .uri("/api/v1/users/")
+                .uri("/api/v1/users")
                 .set_json(registration("CAD"))
                 .to_request(),
         )
@@ -886,7 +882,7 @@ mod currency_inactive_tests {
         let resp = test::call_service(
             &app,
             test::TestRequest::post()
-                .uri("/api/v1/users/")
+                .uri("/api/v1/users")
                 .set_json(registration("USD"))
                 .to_request(),
         )
@@ -947,7 +943,7 @@ async fn user_listings_drop_coordinates() {
     let created: UserResponse = test::call_and_read_body_json(
         &app,
         test::TestRequest::post()
-            .uri("/api/v1/users/")
+            .uri("/api/v1/users")
             .set_json(json!({
                 "email": email,
                 "password": "password123",

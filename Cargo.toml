@@ -9,7 +9,6 @@ members = [
     "app_api/calendar_sync_job",
     "common",
     "db_core",
-    "protoproj",
     "web_client",
     "web_ui_common",
     "web_ui_guest",

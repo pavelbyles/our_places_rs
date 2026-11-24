@@ -166,7 +166,7 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo clippy --locked --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings
+        run: cargo clippy --locked --workspace --all-features --manifest-path Cargo.toml -- -D warnings
       # Workflow syntax, expressions and action inputs. Shellcheck stays off
       # until the existing run scripts' findings are fixed (see #58 handoff).
       - name: Lint GitHub Actions workflows
@@ -193,7 +193,7 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo build --locked --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
+        run: cargo build --locked --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin
       - name: Run DB and Migrations (Local Test)
         run: cargo make --cwd app_api/listing_api db-migrate
       - name: Run testsTest API
@@ -204,7 +204,7 @@ jobs:
           # No Pub/Sub on the runner: queued emails stay in the outbox instead
           # of each publish failing against the GCP metadata server.
           DISABLE_PUBSUB_PUBLISH: "true"
-        run: cargo test --locked --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
+        run: cargo test --locked --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin
 
   test-web-ui:
     name: Test Web UI

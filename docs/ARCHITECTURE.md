@@ -93,7 +93,6 @@ Dependency rules:
 | **`web_ui_common/`** | lib | Shared Topcoat components (DaisyUI v5 / Tailwind v4), theme tokens, guest and admin shells, security headers (CSP), asset bundler used by the Docker builds. | `web_client`, `common` |
 | **`web_ui_guest/`** | bin | Guest portal: home, search, listing detail, checkout, bookings, change requests, messages, documents, reviews, profile, policy pages. | `web_ui_common`, `web_client`, `common` |
 | **`web_ui_admin/`** | bin | Admin and host portal: dashboard, listings and photos, pricing, bookings, users, payouts, promo codes, exchange rates. | `web_ui_common`, `web_client`, `common` |
-| **`protoproj/`** | lib | gRPC/protobuf experiment (`tonic`). Not deployed; excluded from CI gates. | — |
 
 ### 3.1. Module layout of the largest modules
 
@@ -405,8 +404,8 @@ Secrets and per-environment variables are listed in [ENVIRONMENT.md](ENVIRONMENT
 docker compose up -d            # PostgreSQL with pg_cron
 sqlx migrate run --source db_core/migrations
 cargo build --workspace
-cargo test --workspace --exclude protoproj
-SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings
+cargo test --workspace
+SQLX_OFFLINE=true cargo clippy --workspace --all-features -- -D warnings
 cargo sqlx prepare --workspace  # after changing any query
 ```
 

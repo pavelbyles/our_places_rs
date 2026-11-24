@@ -46,10 +46,10 @@ Execute all checks from [`sanity-check-workflow.md`](file:///home/pav/code/our_p
 cargo fmt --check
 
 # 2. Clippy linter
-cargo clippy --workspace --exclude protoproj --all-features -- -D warnings
+cargo clippy --workspace --all-features -- -D warnings
 
 # 3. Unit & integration tests
-cargo test --workspace --exclude protoproj
+cargo test --workspace
 ```
 
 ### 5. Commit, Push & Post Resolution Summary

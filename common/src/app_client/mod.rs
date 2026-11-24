@@ -136,6 +136,6 @@ pub use users::{
     encode_query_component, fetch_user_profile, get_all_users, get_all_users_filtered, get_session,
     get_session_at, hard_delete_user, invite_staff_user, list_staff_users, login_user,
     login_user_at, remove_staff_user, request_password_reset, resend_staff_invite,
-    resend_verification, restore_user, revoke_user_sessions, soft_delete_user,
-    staff_users_list_url, update_staff_listings, update_user, verify_user, verify_user_at,
+    resend_verification, restore_user, soft_delete_user, staff_users_list_url,
+    update_staff_listings, update_user, verify_user, verify_user_at,
 };

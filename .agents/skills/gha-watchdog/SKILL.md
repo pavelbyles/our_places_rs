@@ -67,10 +67,10 @@ Before any push, execute the complete sanity check sequence:
 cargo fmt --check
 
 # 2. Clippy
-SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings
+SQLX_OFFLINE=true cargo clippy --workspace --all-features -- -D warnings
 
 # 3. Unit & Integration Tests
-cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
+cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin
 cargo test -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin --verbose
 ```
 
