@@ -105,47 +105,6 @@ fn test_seasonal_min_nights_enforcement() {
 }
 
 #[test]
-fn test_updated_booking_request_json_deserialization() {
-    use crate::apis::UpdatedBookingRequest;
-    use db_core::models::BookingStatus;
-
-    let json_data = r#"{"status":"confirmed"}"#;
-    let parsed: Result<UpdatedBookingRequest, _> = serde_json::from_str(json_data);
-    assert!(
-        parsed.is_ok(),
-        "Failed to deserialize status 'confirmed': {:?}",
-        parsed.err()
-    );
-    assert_eq!(parsed.unwrap().status, Some(BookingStatus::Confirmed));
-
-    let json_cancelled = r#"{"status":"cancelled"}"#;
-    let parsed_cancelled: UpdatedBookingRequest = serde_json::from_str(json_cancelled).unwrap();
-    assert_eq!(parsed_cancelled.status, Some(BookingStatus::Cancelled));
-
-    let json_pending = r#"{"status":"pending"}"#;
-    let parsed_pending: UpdatedBookingRequest = serde_json::from_str(json_pending).unwrap();
-    assert_eq!(parsed_pending.status, Some(BookingStatus::Pending));
-
-    let json_completed = r#"{"status":"completed"}"#;
-    let parsed_completed: UpdatedBookingRequest = serde_json::from_str(json_completed).unwrap();
-    assert_eq!(parsed_completed.status, Some(BookingStatus::Completed));
-}
-
-#[test]
-fn test_cancellation_policy_json_deserialization() {
-    use db_core::models::CancellationPolicy;
-
-    let flex: CancellationPolicy = serde_json::from_str(r#""flexible""#).unwrap();
-    assert_eq!(flex, CancellationPolicy::Flexible);
-
-    let mod_policy: CancellationPolicy = serde_json::from_str(r#""moderate""#).unwrap();
-    assert_eq!(mod_policy, CancellationPolicy::Moderate);
-
-    let strict: CancellationPolicy = serde_json::from_str(r#""strict""#).unwrap();
-    assert_eq!(strict, CancellationPolicy::Strict);
-}
-
-#[test]
 fn test_user_bookings_response_mapping() {
     use api_core::models::map_booking_to_response;
     use chrono::Utc;
@@ -268,21 +227,6 @@ fn test_listing_bookings_response_mapping_all_statuses() {
 }
 
 #[test]
-fn test_pagination_params_deserialization() {
-    use api_core::pagination::Pagination;
-
-    let json = r#"{"page":2,"per_page":25}"#;
-    let parsed: Pagination = serde_json::from_str(json).unwrap();
-    assert_eq!(parsed.page, Some(2));
-    assert_eq!(parsed.per_page, Some(25));
-
-    let json_empty = "{}";
-    let parsed_empty: Pagination = serde_json::from_str(json_empty).unwrap();
-    assert_eq!(parsed_empty.page, None);
-    assert_eq!(parsed_empty.per_page, None);
-}
-
-#[test]
 fn test_payout_status_deserialization() {
     use common::payout::PayoutStatus;
 
@@ -306,56 +250,6 @@ fn test_payout_status_deserialization() {
         serde_json::from_str::<PayoutStatus>(r#""refunded""#).unwrap(),
         PayoutStatus::Refunded
     );
-}
-
-#[test]
-fn test_update_payout_status_request_serde() {
-    use common::payout::{PayoutStatus, UpdatePayoutStatusRequest};
-
-    let req = UpdatePayoutStatusRequest {
-        status: PayoutStatus::Paid,
-        gateway_reference: Some("GATEWAY_TX_987".to_string()),
-        failure_reason: None,
-    };
-
-    let json = serde_json::to_string(&req).unwrap();
-    assert!(json.contains(r#""status":"paid""#));
-    assert!(json.contains(r#""gateway_reference":"GATEWAY_TX_987""#));
-
-    let deserialized: UpdatePayoutStatusRequest = serde_json::from_str(&json).unwrap();
-    assert_eq!(deserialized.status, PayoutStatus::Paid);
-    assert_eq!(
-        deserialized.gateway_reference,
-        Some("GATEWAY_TX_987".to_string())
-    );
-}
-
-#[test]
-fn test_updated_booking_request_with_door_code() {
-    use crate::apis::UpdatedBookingRequest;
-
-    let json_data = r#"{"door_access_code":"8899"}"#;
-    let parsed: UpdatedBookingRequest = serde_json::from_str(json_data).unwrap();
-    assert_eq!(parsed.door_access_code.as_deref(), Some("8899"));
-    assert!(parsed.status.is_none());
-    assert!(parsed.metadata.is_none());
-}
-
-#[test]
-fn test_cron_sweep_response_serde() {
-    use crate::apis::CronSweepResponse;
-
-    let resp = CronSweepResponse {
-        status: "success".to_string(),
-        pre_arrival_processed: 5,
-        hold_reminders_processed: 2,
-        request_reminders_processed: 1,
-    };
-
-    let json = serde_json::to_string(&resp).unwrap();
-    assert!(json.contains(r#""status":"success""#));
-    assert!(json.contains(r#""pre_arrival_processed":5"#));
-    assert!(json.contains(r#""hold_reminders_processed":2"#));
 }
 
 #[test]

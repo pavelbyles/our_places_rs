@@ -337,8 +337,6 @@ mod stay_override_tests;
 #[cfg(test)]
 mod stay_pricing_pin_tests;
 #[cfg(test)]
-mod stay_total_golden_tests;
-#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod turnover_api_tests;

@@ -325,7 +325,11 @@ mod feeds {
     async fn callers_are_checked() {
         let c = ctx().await;
         let feed = c.insert_feed(c.listing, "/ok.ics").await;
+        let some = Uuid::now_v7();
+        let blocks_uri = format!("/api/v1/listings/{}/calendar/blocks", c.listing);
+        let conflicts_uri = format!("/api/v1/listings/{}/calendar/conflicts", c.listing);
         let cases = [
+            // Feeds
             (Method::GET, feeds_uri(c.listing), None),
             (
                 Method::POST,
@@ -345,6 +349,24 @@ mod feeds {
             (
                 Method::POST,
                 format!("/api/v1/listings/{}/calendar/sync", c.listing),
+                None,
+            ),
+            // Blocks
+            (Method::GET, blocks_uri.clone(), None),
+            (
+                Method::POST,
+                blocks_uri.clone(),
+                Some(serde_json::json!({
+                    "date_from": future(5),
+                    "date_to": future(8),
+                })),
+            ),
+            (Method::DELETE, format!("{blocks_uri}/{some}"), None),
+            // Conflicts
+            (Method::GET, conflicts_uri.clone(), None),
+            (
+                Method::POST,
+                format!("{conflicts_uri}/{some}/acknowledge"),
                 None,
             ),
         ];
@@ -743,28 +765,6 @@ mod blocks {
             (StatusCode::CONFLICT, Some("CALENDAR_BLOCK_MANAGED_BY_FEED"))
         );
     }
-
-    #[actix_web::test]
-    async fn callers_are_checked() {
-        let c = ctx().await;
-        let some = Uuid::now_v7();
-        for (method, path, body) in [
-            (Method::GET, uri(c.listing), None),
-            (
-                Method::POST,
-                uri(c.listing),
-                Some(block(future(5), future(8))),
-            ),
-            (Method::DELETE, format!("{}/{some}", uri(c.listing)), None),
-        ] {
-            let (status, _, _) = c.call(method.clone(), &path, None, body.clone()).await;
-            assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}");
-            let (status, _, _) = c
-                .call(method.clone(), &path, Some(c.other_host), body)
-                .await;
-            assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}");
-        }
-    }
 }
 
 mod conflicts {
@@ -836,26 +836,6 @@ mod conflicts {
             )
             .await;
         assert_eq!(body["history"]["items"].as_array().map(Vec::len), Some(0));
-    }
-
-    #[actix_web::test]
-    async fn callers_are_checked() {
-        let c = ctx().await;
-        let some = Uuid::now_v7();
-        for (method, path) in [
-            (Method::GET, uri(c.listing)),
-            (
-                Method::POST,
-                format!("{}/{some}/acknowledge", uri(c.listing)),
-            ),
-        ] {
-            let (status, _, _) = c.call(method.clone(), &path, None, None).await;
-            assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}");
-            let (status, _, _) = c
-                .call(method.clone(), &path, Some(c.other_host), None)
-                .await;
-            assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}");
-        }
     }
 }
 

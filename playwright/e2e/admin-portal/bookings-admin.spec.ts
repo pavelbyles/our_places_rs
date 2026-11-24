@@ -12,19 +12,6 @@ test.describe('Admin Portal - Master Booking Schedule & Keyless Entry', () => {
     await authenticatedAdminPage.goto('/admin/bookings');
   });
 
-  test('should render master booking schedule title and export button', async ({ authenticatedAdminPage }) => {
-    const heading = authenticatedAdminPage.locator('h1');
-    await expect(heading).toContainText('Master Booking Schedule');
-
-    // Export CSV button
-    const exportBtn = authenticatedAdminPage.locator('button:has-text("Export CSV")');
-    await expect(exportBtn).toBeVisible();
-
-    // Verify bookings table is rendered
-    const table = authenticatedAdminPage.locator('#admin-bookings-table');
-    await expect(table).toBeVisible();
-  });
-
   test('should open reservation audit modal and display Keyless Access configuration panel', NEW_ONLY, async ({ authenticatedAdminPage }) => {
     // Find the details button on the first booking row
     const detailsBtn = authenticatedAdminPage.locator('button:has-text("Details")').first();

@@ -870,214 +870,417 @@ mod tests {
     }
 
     use super::*;
+    use common::email::EmailTemplate;
 
     #[test]
-    fn test_render_pre_arrival_guide() {
-        let payload = serde_json::json!({
-            "confirmation_code": "PRE1234",
-            "listing_name": "Villa Tropical",
-            "address": "123 Ocean Blvd, Portland",
-            "date_from": "2026-11-01",
-            "date_to": "2026-11-05",
-            "door_access_code": "5678",
-            "wifi_ssid": "VillaGuestWifi",
-            "wifi_password": "supersecretpassword",
-            "check_in_instructions": "Gate code is 1234, door keypad on the left."
+    fn every_template_renders_without_placeholders() {
+        let request_payload = serde_json::json!({
+            "recipient_name": "Alex",
+            "listing_name": "Sea Grape Villa",
+            "guest_name": "Jordan",
+            "date_from": "2030-02-01",
+            "date_to": "2030-02-04",
+            "number_of_persons": 2,
+            "total": "USD 1,172.00",
+            "expires_at": "2030-01-25 12:00 UTC",
+            "action_url": "https://ourplaces.example/requests/1",
+            "message_text": "Can we arrive early?",
+            "terms": "Wedding allowed until 10pm.",
+            "decline_note": "Events aren't permitted",
+            "promo_dropped": "true",
         });
 
-        let body = render_email_body("pre_arrival_guide_guest", &payload);
-        assert!(body.contains("PRE1234"));
-        assert!(body.contains("Villa Tropical"));
-        assert!(body.contains("5678"));
-        assert!(body.contains("VillaGuestWifi"));
-        assert!(body.contains("supersecretpassword"));
-        assert!(body.contains("Gate code is 1234"));
+        let mut cases: Vec<(&str, serde_json::Value, Vec<&str>)> = vec![
+            (
+                "user_verification_otp",
+                serde_json::json!({ "code": "123456" }),
+                vec!["123456", "Welcome to Our Places!"],
+            ),
+            (
+                "password_reset_otp",
+                serde_json::json!({ "token": "rst_999" }),
+                vec!["rst_999"],
+            ),
+            (
+                "booking_confirmation",
+                serde_json::json!({
+                    "confirmation_code": "CONF123",
+                    "dates": "Oct 1 - Oct 5",
+                    "total_price": "$1,200.00"
+                }),
+                vec!["CONF123", "$1,200.00"],
+            ),
+            (
+                "guest_host_message_notification",
+                serde_json::json!({
+                    "sender_name": "Alice",
+                    "message_text": "What is the check-in time?"
+                }),
+                vec!["Alice", "What is the check-in time?"],
+            ),
+            (
+                "pre_arrival_guide_guest",
+                serde_json::json!({
+                    "confirmation_code": "PRE1234",
+                    "listing_name": "Villa Tropical",
+                    "address": "123 Ocean Blvd, Portland",
+                    "date_from": "2026-11-01",
+                    "date_to": "2026-11-05",
+                    "door_access_code": "5678",
+                    "wifi_ssid": "VillaGuestWifi",
+                    "wifi_password": "supersecretpassword",
+                    "check_in_instructions": "Gate code is 1234, door keypad on the left."
+                }),
+                vec![
+                    "PRE1234",
+                    "Villa Tropical",
+                    "5678",
+                    "VillaGuestWifi",
+                    "supersecretpassword",
+                    "Gate code is 1234",
+                ],
+            ),
+            (
+                "host_upcoming_arrival",
+                serde_json::json!({
+                    "confirmation_code": "HOST999",
+                    "listing_name": "Villa Sunset",
+                    "guest_name": "Alice Smith",
+                    "number_of_persons": 4,
+                    "date_from": "2026-11-10",
+                    "date_to": "2026-11-15",
+                    "door_access_code": "9876"
+                }),
+                vec!["HOST999", "Alice Smith", "4 guests", "9876"],
+            ),
+            (
+                "payment_hold_expiry_reminder",
+                serde_json::json!({
+                    "confirmation_code": "HOLD111",
+                    "listing_name": "Cozy Flat",
+                    "expires_at": "2026-11-01 14:00 UTC",
+                    "total_price": "450.00",
+                    "currency": "USD",
+                    "checkout_url": "https://ourplaces.co/checkout/HOLD111"
+                }),
+                vec![
+                    "HOLD111",
+                    "Cozy Flat",
+                    "2026-11-01 14:00 UTC",
+                    "https://ourplaces.co/checkout/HOLD111",
+                ],
+            ),
+            (
+                "booking_cancelled_guest",
+                serde_json::json!({
+                    "confirmation_code": "CANCEL123",
+                    "listing_name": "Azure Haven",
+                    "date_from": "2026-12-01",
+                    "date_to": "2026-12-05",
+                    "refund_amount": "500.00",
+                    "currency": "USD",
+                    "cancellation_policy": "Moderate",
+                    "refund_pct": "0.50",
+                    "retained_amount": "327.50"
+                }),
+                vec![
+                    "CANCEL123",
+                    "Azure Haven",
+                    "50%",
+                    "USD $500.00",
+                    "USD $327.50",
+                ],
+            ),
+            (
+                "booking_updated_guest",
+                serde_json::json!({
+                    "confirmation_code": "UPDATE123",
+                    "listing_name": "Azure Haven",
+                    "date_from": "2026-12-05",
+                    "date_to": "2026-12-10",
+                    "total_price": "1200.00",
+                    "currency": "USD",
+                    "changes_summary": "Dates extended by 2 nights",
+                    "receipt_url": "https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2",
+                    "balance_due": "350.00"
+                }),
+                vec![
+                    "UPDATE123",
+                    "Azure Haven",
+                    "USD $1,200.00",
+                    "USD $350.00",
+                    "https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2",
+                ],
+            ),
+            (
+                "booking_completed_guest",
+                serde_json::json!({
+                    "confirmation_code": "COMP123",
+                    "listing_name": "Azure Haven",
+                    "date_from": "2026-12-01",
+                    "date_to": "2026-12-05",
+                    "total_price": "1000.00",
+                    "currency": "USD",
+                    "invoice_url": "https://ourplaces.co/bookings/123/documents/INV-2026-COMP123",
+                    "invoice_number": "INV-2026-COMP123",
+                    "accommodation_net": "800.00",
+                    "cleaning_fee": "50.00",
+                    "tax_amount": "127.50"
+                }),
+                vec![
+                    "COMP123",
+                    "Azure Haven",
+                    "INV-2026-COMP123",
+                    "USD $1,000.00",
+                    "USD $800.00",
+                    "USD $50.00",
+                    "USD $127.50",
+                    "https://ourplaces.co/bookings/123/documents/INV-2026-COMP123",
+                ],
+            ),
+            (
+                "reservation_change_requested",
+                serde_json::json!({
+                    "booking_id": Uuid::new_v4(),
+                    "change_request_id": Uuid::new_v4(),
+                    "confirmation_code": "CHG1234",
+                    "listing_name": "Villa Coral",
+                    "recipient_name": "Marcus Host",
+                    "initiator_name": "Elena Guest",
+                    "initiated_by_role": "guest",
+                    "previous_date_from": "2026-12-01",
+                    "previous_date_to": "2026-12-04",
+                    "proposed_date_from": "2026-12-01",
+                    "proposed_date_to": "2026-12-06",
+                    "previous_number_of_persons": 2,
+                    "proposed_number_of_persons": 4,
+                    "previous_total_price": "800.00",
+                    "proposed_total_price": "1350.00",
+                    "balance_due": "550.00",
+                    "currency": "USD",
+                    "reason": "Friends joining",
+                    "action_url": "https://ourplaces.co/admin/bookings"
+                }),
+                vec![
+                    "CHG1234",
+                    "Villa Coral",
+                    "Marcus Host",
+                    "Elena Guest",
+                    "2026-12-06",
+                    "USD $550.00",
+                ],
+            ),
+            (
+                "reservation_change_approved",
+                serde_json::json!({
+                    "booking_id": Uuid::new_v4(),
+                    "change_request_id": Uuid::new_v4(),
+                    "confirmation_code": "CHG1234",
+                    "listing_name": "Villa Coral",
+                    "recipient_name": "Elena Guest",
+                    "responder_name": "Marcus Host",
+                    "date_from": "2026-12-01",
+                    "date_to": "2026-12-06",
+                    "number_of_persons": 4,
+                    "total_price": "1350.00",
+                    "balance_due": "550.00",
+                    "currency": "USD",
+                    "settlement_status": "charged",
+                    "response_note": "Happy to host your friends!",
+                    "receipt_url": "https://ourplaces.co/bookings/123/documents/REC-2026-CHG1234-R2"
+                }),
+                vec![
+                    "CHG1234",
+                    "Happy to host your friends!",
+                    "REC-2026-CHG1234-R2",
+                ],
+            ),
+            (
+                "reservation_change_declined",
+                serde_json::json!({
+                    "booking_id": Uuid::new_v4(),
+                    "change_request_id": Uuid::new_v4(),
+                    "confirmation_code": "CHG1234",
+                    "listing_name": "Villa Coral",
+                    "recipient_name": "Elena Guest",
+                    "responder_name": "Marcus Host",
+                    "proposed_date_from": "2026-12-01",
+                    "proposed_date_to": "2026-12-06",
+                    "proposed_number_of_persons": 4,
+                    "response_note": "Maintenance scheduled after Dec 4",
+                    "booking_url": "https://ourplaces.co/bookings"
+                }),
+                vec![
+                    "CHG1234",
+                    "Maintenance scheduled after Dec 4",
+                    "https://ourplaces.co/bookings",
+                ],
+            ),
+            (
+                "calendar_conflict_host",
+                serde_json::json!({
+                    "listing_name": "Villa Azul",
+                    "feed_name": "Airbnb",
+                    "date_from": "2030-01-12",
+                    "date_to": "2030-01-14",
+                    "confirmation_code": "ABC123",
+                    "kind": "overlap",
+                    "reopened": "false",
+                    "calendar_url": "https://admin.test/admin/listings/1/calendar"
+                }),
+                vec![
+                    "Villa Azul",
+                    "Airbnb",
+                    "2030-01-12",
+                    "2030-01-14",
+                    "ABC123",
+                    "overlaps a stay",
+                    "Calendar conflict",
+                    "https://admin.test/admin/listings/1/calendar",
+                ],
+            ),
+            (
+                "calendar_conflict_host",
+                serde_json::json!({
+                    "listing_name": "Villa Azul",
+                    "feed_name": "Airbnb",
+                    "date_from": "2030-01-12",
+                    "date_to": "2030-01-14",
+                    "confirmation_code": "ABC123",
+                    "kind": "turnover",
+                    "reopened": "true",
+                    "calendar_url": "https://admin.test/admin/listings/1/calendar"
+                }),
+                vec!["Calendar conflict reopened", "no turnover time"],
+            ),
+            (
+                "calendar_feed_failing_host",
+                serde_json::json!({
+                    "listing_name": "Villa Azul",
+                    "feed_name": "VRBO",
+                    "error_code": "calendar server returned HTTP 503",
+                    "failures": 4,
+                    "calendar_url": "https://admin.test/admin/listings/1/calendar"
+                }),
+                vec![
+                    "Villa Azul",
+                    "VRBO",
+                    "HTTP 503",
+                    "4 times",
+                    "/admin/listings/1/calendar",
+                ],
+            ),
+        ];
+
+        for template in EmailTemplate::REQUEST_EMAILS {
+            cases.push((
+                template.as_str(),
+                request_payload.clone(),
+                vec![
+                    "Sea Grape Villa",
+                    "Hello <strong>Alex</strong>",
+                    "href=\"https://ourplaces.example/requests/1\"",
+                ],
+            ));
+        }
+
+        for (template, payload, wants) in cases {
+            let body = render_email_body(template, &payload);
+            assert!(!body.contains("{{"), "{template}: unfilled placeholder");
+            assert!(!body.contains("}}"), "{template}: unfilled placeholder");
+            for want in wants {
+                assert!(body.contains(want), "{template}: missing {want:?}");
+            }
+        }
     }
 
     #[test]
-    fn test_render_host_upcoming_arrival() {
-        let payload = serde_json::json!({
-            "confirmation_code": "HOST999",
-            "listing_name": "Villa Sunset",
-            "guest_name": "Alice Smith",
-            "number_of_persons": 4,
-            "date_from": "2026-11-10",
-            "date_to": "2026-11-15",
-            "door_access_code": "9876"
-        });
-
-        let body = render_email_body("host_upcoming_arrival", &payload);
-        assert!(body.contains("HOST999"));
-        assert!(body.contains("Alice Smith"));
-        assert!(body.contains("4 guests"));
-        assert!(body.contains("9876"));
-    }
-
-    #[test]
-    fn test_render_payment_hold_expiry_reminder() {
-        let payload = serde_json::json!({
-            "confirmation_code": "HOLD111",
-            "listing_name": "Cozy Flat",
-            "expires_at": "2026-11-01 14:00 UTC",
-            "total_price": "450.00",
-            "currency": "USD",
-            "checkout_url": "https://ourplaces.co/checkout/HOLD111"
-        });
-
-        let body = render_email_body("payment_hold_expiry_reminder", &payload);
-        assert!(body.contains("HOLD111"));
-        assert!(body.contains("Cozy Flat"));
-        assert!(body.contains("2026-11-01 14:00 UTC"));
-        assert!(body.contains("https://ourplaces.co/checkout/HOLD111"));
-    }
-
-    #[test]
-    fn test_render_booking_cancelled_guest() {
-        let payload = serde_json::json!({
-            "confirmation_code": "CANCEL123",
-            "listing_name": "Azure Haven",
-            "date_from": "2026-12-01",
-            "date_to": "2026-12-05",
-            "refund_amount": "500.00",
-            "currency": "USD",
-            "cancellation_policy": "Moderate",
-            "refund_pct": "0.50",
-            "retained_amount": "327.50"
-        });
-
-        let body = render_email_body("booking_cancelled_guest", &payload);
-        assert!(body.contains("CANCEL123"));
-        assert!(body.contains("Azure Haven"));
-        assert!(body.contains("50%"));
-        assert!(body.contains("USD $500.00"));
-        assert!(body.contains("USD $327.50"));
-    }
-
-    #[test]
-    fn test_render_booking_updated_guest() {
-        let payload = serde_json::json!({
-            "confirmation_code": "UPDATE123",
-            "listing_name": "Azure Haven",
-            "date_from": "2026-12-05",
-            "date_to": "2026-12-10",
-            "total_price": "1200.00",
-            "currency": "USD",
-            "changes_summary": "Dates extended by 2 nights",
-            "receipt_url": "https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2",
-            "balance_due": "350.00"
-        });
-
-        let body = render_email_body("booking_updated_guest", &payload);
-        assert!(body.contains("UPDATE123"));
-        assert!(body.contains("Azure Haven"));
-        assert!(body.contains("USD $1,200.00"));
-        assert!(body.contains("USD $350.00"));
-        assert!(body.contains("https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2"));
-    }
-
-    #[test]
-    fn test_render_booking_completed_guest() {
-        let payload = serde_json::json!({
-            "confirmation_code": "COMP123",
-            "listing_name": "Azure Haven",
-            "date_from": "2026-12-01",
-            "date_to": "2026-12-05",
-            "total_price": "1000.00",
-            "currency": "USD",
-            "invoice_url": "https://ourplaces.co/bookings/123/documents/INV-2026-COMP123",
-            "invoice_number": "INV-2026-COMP123",
-            "accommodation_net": "800.00",
-            "cleaning_fee": "50.00",
-            "tax_amount": "127.50"
-        });
-
-        let body = render_email_body("booking_completed_guest", &payload);
-        assert!(body.contains("COMP123"));
-        assert!(body.contains("Azure Haven"));
-        assert!(body.contains("INV-2026-COMP123"));
-        assert!(body.contains("USD $1,000.00"));
-        assert!(body.contains("USD $800.00"));
-        assert!(body.contains("USD $50.00"));
-        assert!(body.contains("USD $127.50"));
-        assert!(body.contains("https://ourplaces.co/bookings/123/documents/INV-2026-COMP123"));
-    }
-
-    #[test]
-    fn test_render_reservation_change_templates() {
-        let requested_payload = serde_json::json!({
-            "booking_id": Uuid::new_v4(),
-            "change_request_id": Uuid::new_v4(),
-            "confirmation_code": "CHG1234",
-            "listing_name": "Villa Coral",
-            "recipient_name": "Marcus Host",
-            "initiator_name": "Elena Guest",
-            "initiated_by_role": "guest",
-            "previous_date_from": "2026-12-01",
-            "previous_date_to": "2026-12-04",
-            "proposed_date_from": "2026-12-01",
-            "proposed_date_to": "2026-12-06",
-            "previous_number_of_persons": 2,
-            "proposed_number_of_persons": 4,
-            "previous_total_price": "800.00",
-            "proposed_total_price": "1350.00",
-            "balance_due": "550.00",
-            "currency": "USD",
-            "reason": "Friends joining <script>alert(1)</script>",
-            "action_url": "https://ourplaces.co/admin/bookings"
-        });
-        let req_body = render_email_body("reservation_change_requested", &requested_payload);
-        assert!(req_body.contains("CHG1234"));
-        assert!(req_body.contains("Villa Coral"));
-        assert!(req_body.contains("Marcus Host"));
-        assert!(req_body.contains("Elena Guest"));
-        assert!(req_body.contains("2026-12-06"));
-        assert!(req_body.contains("USD $550.00"));
+    fn templates_escape_html_and_drop_unsafe_links() {
+        let script = "<script>alert(1)</script>";
+        let req_body = render_email_body(
+            "reservation_change_requested",
+            &serde_json::json!({
+                "booking_id": Uuid::new_v4(),
+                "change_request_id": Uuid::new_v4(),
+                "confirmation_code": "CHG1234",
+                "listing_name": "Villa Coral",
+                "recipient_name": "Marcus Host",
+                "initiator_name": "Elena Guest",
+                "initiated_by_role": "guest",
+                "previous_date_from": "2026-12-01",
+                "previous_date_to": "2026-12-04",
+                "proposed_date_from": "2026-12-01",
+                "proposed_date_to": "2026-12-06",
+                "previous_number_of_persons": 2,
+                "proposed_number_of_persons": 4,
+                "previous_total_price": "800.00",
+                "proposed_total_price": "1350.00",
+                "balance_due": "550.00",
+                "currency": "USD",
+                "reason": script,
+                "action_url": "https://ourplaces.co/admin/bookings"
+            }),
+        );
         assert!(req_body.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
-        assert!(!req_body.contains("{{"));
-        assert!(!req_body.contains("}}"));
+        assert!(!req_body.contains(script));
 
-        let approved_payload = serde_json::json!({
-            "booking_id": Uuid::new_v4(),
-            "change_request_id": Uuid::new_v4(),
-            "confirmation_code": "CHG1234",
-            "listing_name": "Villa Coral",
-            "recipient_name": "Elena Guest",
-            "responder_name": "Marcus Host",
-            "date_from": "2026-12-01",
-            "date_to": "2026-12-06",
-            "number_of_persons": 4,
-            "total_price": "1350.00",
-            "balance_due": "550.00",
-            "currency": "USD",
-            "settlement_status": "charged",
-            "response_note": "Happy to host your friends!",
-            "receipt_url": "https://ourplaces.co/bookings/123/documents/REC-2026-CHG1234-R2"
+        let mut req_payload = serde_json::json!({
+            "recipient_name": script,
+            "listing_name": script,
+            "guest_name": script,
+            "date_from": "2030-02-01",
+            "date_to": "2030-02-04",
+            "number_of_persons": 2,
+            "total": script,
+            "expires_at": script,
+            "action_url": "javascript:alert(1)",
+            "message_text": script,
+            "terms": script,
+            "decline_note": script,
+            "promo_dropped": "false",
         });
-        let app_body = render_email_body("reservation_change_approved", &approved_payload);
-        assert!(app_body.contains("CHG1234"));
-        assert!(app_body.contains("Happy to host your friends!"));
-        assert!(app_body.contains("REC-2026-CHG1234-R2"));
-        assert!(!app_body.contains("{{"));
-        assert!(!app_body.contains("}}"));
+        for template in EmailTemplate::REQUEST_EMAILS {
+            let body = render_email_body(template.as_str(), &req_payload);
+            assert!(!body.contains("<script>"), "{template:?}");
+            assert!(body.contains("&lt;script&gt;"), "{template:?}");
+            assert!(!body.contains("javascript:"), "{template:?}");
+        }
+        req_payload["action_url"] = serde_json::json!("javascript:alert(1)");
+        let host_body = render_email_body("request_received_host", &req_payload);
+        assert!(!host_body.contains("<a href"));
 
-        let declined_payload = serde_json::json!({
-            "booking_id": Uuid::new_v4(),
-            "change_request_id": Uuid::new_v4(),
-            "confirmation_code": "CHG1234",
-            "listing_name": "Villa Coral",
-            "recipient_name": "Elena Guest",
-            "responder_name": "Marcus Host",
-            "proposed_date_from": "2026-12-01",
-            "proposed_date_to": "2026-12-06",
-            "proposed_number_of_persons": 4,
-            "response_note": "Maintenance scheduled after Dec 4",
-            "booking_url": "https://ourplaces.co/bookings"
-        });
-        let dec_body = render_email_body("reservation_change_declined", &declined_payload);
-        assert!(dec_body.contains("CHG1234"));
-        assert!(dec_body.contains("Maintenance scheduled after Dec 4"));
-        assert!(dec_body.contains("https://ourplaces.co/bookings"));
-        assert!(!dec_body.contains("{{"));
-        assert!(!dec_body.contains("}}"));
+        for (template, payload) in [
+            (
+                "calendar_conflict_host",
+                serde_json::json!({
+                    "listing_name": script,
+                    "feed_name": "<img src=x onerror=alert(2)>",
+                    "date_from": "2030-01-12",
+                    "date_to": "2030-01-14",
+                    "confirmation_code": "ABC123",
+                    "kind": "overlap",
+                    "reopened": "false",
+                    "calendar_url": "javascript:alert(3)"
+                }),
+            ),
+            (
+                "calendar_feed_failing_host",
+                serde_json::json!({
+                    "listing_name": script,
+                    "feed_name": "<img src=x onerror=alert(2)>",
+                    "error_code": "HTTP 503",
+                    "failures": 4,
+                    "calendar_url": "javascript:alert(3)"
+                }),
+            ),
+        ] {
+            let html = render_email_body(template, &payload);
+            assert!(
+                !html.contains("<script>") && !html.contains("<img"),
+                "{template}"
+            );
+            assert!(html.contains("&lt;script&gt;"), "{template}");
+            assert!(!html.contains("javascript:"), "{template}");
+        }
     }
 }

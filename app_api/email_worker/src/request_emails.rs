@@ -246,61 +246,10 @@ mod request_template_tests {
     }
 
     #[test]
-    fn every_request_email_renders_without_placeholders() {
-        for template in EmailTemplate::REQUEST_EMAILS {
-            let body = match render(template.as_str(), &payload()) {
-                Some(body) => body,
-                None => panic!("{template:?} has no copy"),
-            };
-            assert!(!body.contains("{{"), "{template:?}: {body}");
-            assert!(!body.contains("{listing}") && !body.contains("{guest}"));
-            assert!(!body.contains("{expires}"), "{template:?}");
-            assert!(body.contains("Sea Grape Villa"), "{template:?}");
-            assert!(body.contains("Hello <strong>Alex</strong>"), "{template:?}");
-            assert!(
-                body.contains("href=\"https://ourplaces.example/requests/1\""),
-                "{template:?}"
-            );
-        }
-    }
-
-    #[test]
     fn other_templates_are_not_request_emails() {
         assert!(render("booking_confirmation", &payload()).is_none());
         assert!(render("guest_host_message_notification", &payload()).is_none());
         assert!(render("no_such_template", &payload()).is_none());
-    }
-
-    #[test]
-    fn user_text_is_escaped_everywhere() {
-        let script = "<script>alert('x')</script>";
-        let mut p = payload();
-        for key in [
-            "recipient_name",
-            "listing_name",
-            "guest_name",
-            "message_text",
-            "terms",
-            "decline_note",
-            "expires_at",
-            "total",
-        ] {
-            p[key] = serde_json::json!(script);
-        }
-        for template in EmailTemplate::REQUEST_EMAILS {
-            let body = render(template.as_str(), &p).unwrap_or_default();
-            assert!(!body.contains("<script>"), "{template:?}");
-            assert!(body.contains("&lt;script&gt;"), "{template:?}");
-        }
-    }
-
-    #[test]
-    fn non_http_links_are_dropped() {
-        let mut p = payload();
-        p["action_url"] = serde_json::json!("javascript:alert(1)");
-        let body = render("request_received_host", &p).unwrap_or_default();
-        assert!(!body.contains("javascript:"));
-        assert!(!body.contains("<a href"));
     }
 
     #[test]

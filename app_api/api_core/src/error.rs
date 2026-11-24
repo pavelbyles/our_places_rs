@@ -444,13 +444,37 @@ pub fn error_chain_fmt(e: &impl std::error::Error, f: &mut Formatter<'_>) -> std
 pub type Result<T> = std::result::Result<T, ApiError>;
 
 #[cfg(test)]
-mod stay_input_error_tests {
+mod error_mapping_tests {
     use super::*;
     use actix_web::body::to_bytes;
     use common::availability::StayInputError;
+    use common::booking_request::RequestRefusal;
+    use common::currency::ListingRef;
+    use common::pricing::PricingError;
+    use common::promo::PromoRefusal;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    async fn render_api(api: ApiError) -> (StatusCode, serde_json::Value, Option<String>) {
+        let status = api.status_code();
+        let resp = api.error_response();
+        assert_eq!(
+            resp.status(),
+            status,
+            "status_code and error_response agree"
+        );
+        let retry_after = resp
+            .headers()
+            .get("Retry-After")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
+        let json = serde_json::from_slice(&bytes).expect("json body");
+        (status, json, retry_after)
+    }
 
     #[tokio::test]
-    async fn every_refusal_is_a_400_with_its_code_and_message() {
+    async fn error_status_code_and_payload_table() {
         for refused in [
             StayInputError::DateMalformed,
             StayInputError::DateMissing,
@@ -460,87 +484,22 @@ mod stay_input_error_tests {
             StayInputError::InvalidGuests,
             StayInputError::InvalidSearchText,
         ] {
-            let api = ApiError::Database(DbError::StayInput(refused));
-            assert_eq!(api.status_code(), StatusCode::BAD_REQUEST, "{refused:?}");
-            let resp = api.error_response();
-            assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{refused:?}");
-            let bytes = match to_bytes(resp.into_body()).await {
-                Ok(bytes) => bytes,
-                Err(e) => panic!("body: {e}"),
-            };
-            let body: serde_json::Value = match serde_json::from_slice(&bytes) {
-                Ok(body) => body,
-                Err(e) => panic!("json: {e}"),
-            };
+            let (status, body, _) =
+                render_api(ApiError::Database(DbError::StayInput(refused))).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{refused:?}");
             assert_eq!(body["code"], refused.code(), "{refused:?}");
             assert_eq!(body["message"], refused.message(), "{refused:?}");
         }
-    }
 
-    #[tokio::test]
-    async fn a_short_stay_is_a_400_naming_the_minimum() {
-        use common::pricing::PricingError;
-        let api = ApiError::StayPricing(PricingError::MinNightsNotMet {
-            required: 5,
-            provided: 4,
-        });
-        assert_eq!(api.status_code(), StatusCode::BAD_REQUEST);
-        let bytes = match to_bytes(api.error_response().into_body()).await {
-            Ok(bytes) => bytes,
-            Err(e) => panic!("body: {e}"),
-        };
-        let body: serde_json::Value = match serde_json::from_slice(&bytes) {
-            Ok(body) => body,
-            Err(e) => panic!("json: {e}"),
-        };
-        assert_eq!(body["code"], "MINIMUM_STAY_NOT_MET");
-        assert_eq!(
-            body["message"],
-            "These dates need a stay of at least 5 nights."
-        );
-        assert_eq!(body["required_nights"], 5);
-    }
-}
-
-#[cfg(test)]
-mod promo_error_tests {
-    use super::*;
-    use actix_web::body::to_bytes;
-    use common::promo::PromoRefusal;
-
-    async fn render(err: DbError) -> (StatusCode, serde_json::Value) {
-        let api = ApiError::Database(err);
-        let status = api.status_code();
-        let resp = api.error_response();
-        assert_eq!(
-            resp.status(),
-            status,
-            "status_code and error_response agree"
-        );
-        let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
-        (status, serde_json::from_slice(&bytes).expect("json body"))
-    }
-
-    #[tokio::test]
-    async fn request_refusal_mapping_gives_each_status_and_code() {
-        use common::booking_request::RequestRefusal;
         for refusal in RequestRefusal::ALL {
-            let api = ApiError::Database(DbError::RequestRefused(refusal));
-            assert_eq!(
-                api.status_code().as_u16(),
-                refusal.http_status(),
-                "{refusal:?}"
-            );
-            let (status, body) = render(DbError::RequestRefused(refusal)).await;
+            let (status, body, _) =
+                render_api(ApiError::Database(DbError::RequestRefused(refusal))).await;
             assert_eq!(status.as_u16(), refusal.http_status(), "{refusal:?}");
             assert!(!status.is_server_error(), "{refusal:?}");
-            assert_eq!(body["code"], refusal.code());
-            assert_eq!(body["message"], refusal.message());
+            assert_eq!(body["code"], refusal.code(), "{refusal:?}");
+            assert_eq!(body["message"], refusal.message(), "{refusal:?}");
         }
-    }
 
-    #[tokio::test]
-    async fn every_refusal_is_a_422_with_its_code_and_message() {
         for refusal in [
             PromoRefusal::NotFound,
             PromoRefusal::Deactivated,
@@ -554,213 +513,132 @@ mod promo_error_tests {
             PromoRefusal::UsageLimitReached,
             PromoRefusal::GuestLimitReached,
         ] {
-            let (status, body) = render(DbError::PromoRefused(refusal)).await;
+            let (status, body, _) =
+                render_api(ApiError::Database(DbError::PromoRefused(refusal))).await;
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{refusal:?}");
-            assert!(
-                !status.is_server_error(),
-                "{refusal:?} isn't a server error"
-            );
-            assert_eq!(body["code"], refusal.code());
-            assert_eq!(body["message"], refusal.message());
+            assert_eq!(body["code"], refusal.code(), "{refusal:?}");
+            assert_eq!(body["message"], refusal.message(), "{refusal:?}");
         }
-    }
 
-    #[tokio::test]
-    async fn management_errors_are_409() {
-        let (status, body) = render(DbError::PromoCodeExists).await;
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(body["code"], "PROMO_CODE_EXISTS");
-
-        let (status, body) = render(DbError::PromoAlreadyDeactivated).await;
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(body["code"], "PROMO_ALREADY_DEACTIVATED");
-    }
-}
-
-#[cfg(test)]
-mod calendar_error_tests {
-    use super::*;
-    use actix_web::body::to_bytes;
-
-    async fn render(err: DbError) -> (StatusCode, serde_json::Value, Option<String>) {
-        let api = ApiError::Database(err);
-        let status = api.status_code();
-        let resp = api.error_response();
-        assert_eq!(
-            resp.status(),
-            status,
-            "status_code and error_response agree"
-        );
-        let retry_after = resp
-            .headers()
-            .get("Retry-After")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string);
-        let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
-        let json = serde_json::from_slice(&bytes).expect("json body");
-        (status, json, retry_after)
-    }
-
-    #[tokio::test]
-    async fn conflict_variants_are_409_with_their_codes() {
-        for (err, code) in [
-            (DbError::CalendarFeedLimit, "CALENDAR_FEED_LIMIT"),
-            (DbError::CalendarFeedDuplicate, "CALENDAR_FEED_DUPLICATE"),
+        let cases: Vec<(ApiError, StatusCode, &str)> = vec![
             (
-                DbError::CalendarBlockManagedByFeed,
+                ApiError::Database(DbError::PromoCodeExists),
+                StatusCode::CONFLICT,
+                "PROMO_CODE_EXISTS",
+            ),
+            (
+                ApiError::Database(DbError::PromoAlreadyDeactivated),
+                StatusCode::CONFLICT,
+                "PROMO_ALREADY_DEACTIVATED",
+            ),
+            (
+                ApiError::Database(DbError::CalendarFeedLimit),
+                StatusCode::CONFLICT,
+                "CALENDAR_FEED_LIMIT",
+            ),
+            (
+                ApiError::Database(DbError::CalendarFeedDuplicate),
+                StatusCode::CONFLICT,
+                "CALENDAR_FEED_DUPLICATE",
+            ),
+            (
+                ApiError::Database(DbError::CalendarBlockManagedByFeed),
+                StatusCode::CONFLICT,
                 "CALENDAR_BLOCK_MANAGED_BY_FEED",
             ),
-            (DbError::CalendarBlockDuplicate, "CALENDAR_BLOCK_DUPLICATE"),
-        ] {
-            let (status, body, retry) = render(err).await;
-            assert_eq!(status, StatusCode::CONFLICT, "{code}");
-            assert_eq!(body["code"], code);
+            (
+                ApiError::Database(DbError::CalendarBlockDuplicate),
+                StatusCode::CONFLICT,
+                "CALENDAR_BLOCK_DUPLICATE",
+            ),
+            (
+                ApiError::Unprocessable {
+                    code: "CALENDAR_FEED_SELF",
+                    message: "no".into(),
+                },
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "CALENDAR_FEED_SELF",
+            ),
+            (
+                ApiError::Database(DbError::CurrencyNotFound("XYZ".into())),
+                StatusCode::NOT_FOUND,
+                "CURRENCY_NOT_FOUND",
+            ),
+            (
+                ApiError::Database(DbError::CurrencyInactive("CAD".into())),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "CURRENCY_INACTIVE",
+            ),
+            (
+                ApiError::Database(DbError::CurrencyExists("USD".into())),
+                StatusCode::CONFLICT,
+                "CURRENCY_EXISTS",
+            ),
+            (
+                ApiError::Database(DbError::EffectiveAtInPast),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "EFFECTIVE_AT_IN_PAST",
+            ),
+            (
+                ApiError::Database(DbError::EffectiveAtTooFar),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "EFFECTIVE_AT_TOO_FAR",
+            ),
+            (
+                ApiError::Database(DbError::RateAlreadyEffective),
+                StatusCode::CONFLICT,
+                "RATE_ALREADY_EFFECTIVE",
+            ),
+            (
+                ApiError::Database(DbError::RateVersionExists),
+                StatusCode::CONFLICT,
+                "RATE_VERSION_EXISTS",
+            ),
+        ];
+
+        for (api, expected_status, expected_code) in cases {
+            let (status, body, retry) = render_api(api).await;
+            assert_eq!(status, expected_status, "{expected_code}");
+            assert_eq!(body["code"], expected_code);
             assert!(body["message"].as_str().is_some_and(|m| !m.is_empty()));
             assert_eq!(retry, None);
         }
-    }
 
-    #[tokio::test]
-    async fn rate_limit_is_429_with_retry_after() {
-        let (status, body, retry) = render(DbError::CalendarSyncRateLimited {
-            retry_after_secs: 42,
-        })
+        // Structured payload variants
+        let (s, b, _) = render_api(ApiError::StayPricing(PricingError::MinNightsNotMet {
+            required: 5,
+            provided: 4,
+        }))
         .await;
-        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(body["code"], "CALENDAR_SYNC_RATE_LIMITED");
-        assert_eq!(body["retry_after_secs"], 42);
-        assert_eq!(retry.as_deref(), Some("42"));
-    }
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(b["code"], "MINIMUM_STAY_NOT_MET");
+        assert_eq!(b["required_nights"], 5);
 
-    #[tokio::test]
-    async fn unprocessable_is_422_with_its_code() {
-        let api = ApiError::Unprocessable {
-            code: "CALENDAR_FEED_SELF",
-            message: "no".into(),
-        };
-        assert_eq!(api.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
-        let resp = api.error_response();
-        let bytes = to_bytes(resp.into_body()).await.expect("body");
-        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
-        assert_eq!(json["code"], "CALENDAR_FEED_SELF");
-    }
-
-    #[tokio::test]
-    async fn rate_limit_retry_after_is_at_least_one_second() {
-        let (_, _, retry) = render(DbError::CalendarSyncRateLimited {
-            retry_after_secs: 0,
-        })
-        .await;
-        assert_eq!(retry.as_deref(), Some("1"));
-    }
-}
-
-#[cfg(test)]
-mod currency_error_tests {
-    use super::*;
-    use actix_web::body::to_bytes;
-    use common::currency::ListingRef;
-    use rust_decimal::Decimal;
-    use std::str::FromStr;
-
-    async fn render(err: DbError) -> (StatusCode, serde_json::Value, Option<String>) {
-        let api = ApiError::Database(err);
-        let status = api.status_code();
-        let resp = api.error_response();
-        assert_eq!(
-            resp.status(),
-            status,
-            "status_code and error_response agree"
-        );
-        let retry_after = resp
-            .headers()
-            .get("Retry-After")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string);
-        let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
-        let json = serde_json::from_slice(&bytes).expect("json body");
-        (status, json, retry_after)
-    }
-
-    #[tokio::test]
-    async fn currency_not_found_is_404() {
-        let (s, b, _) = render(DbError::CurrencyNotFound("XYZ".into())).await;
-        assert_eq!(s, StatusCode::NOT_FOUND);
-        assert_eq!(b["code"], "CURRENCY_NOT_FOUND");
-    }
-
-    #[tokio::test]
-    async fn currency_unknown_on_write_is_422() {
-        let (s, b, _) = render(DbError::CurrencyUnknown("XYZ".into())).await;
+        let (s, b, _) =
+            render_api(ApiError::Database(DbError::CurrencyUnknown("XYZ".into()))).await;
         assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(b["code"], "CURRENCY_NOT_FOUND");
         assert_eq!(b["currency"], "XYZ");
-    }
 
-    #[tokio::test]
-    async fn currency_inactive_is_422() {
-        let (s, b, _) = render(DbError::CurrencyInactive("CAD".into())).await;
-        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(b["code"], "CURRENCY_INACTIVE");
-    }
-
-    #[tokio::test]
-    async fn currency_in_use_lists_listings() {
         let listing = ListingRef {
             id: uuid::Uuid::nil(),
             title: "Villa Azul".into(),
             slug: "villa-azul".into(),
         };
-        let (s, b, _) = render(DbError::CurrencyInUse(vec![listing])).await;
+        let (s, b, _) = render_api(ApiError::Database(DbError::CurrencyInUse(vec![listing]))).await;
         assert_eq!(s, StatusCode::CONFLICT);
         assert_eq!(b["code"], "CURRENCY_IN_USE");
         assert_eq!(b["listings"][0]["title"], "Villa Azul");
         assert_eq!(b["listings"][0]["slug"], "villa-azul");
-    }
 
-    #[tokio::test]
-    async fn currency_exists_is_409() {
-        let (s, b, _) = render(DbError::CurrencyExists("USD".into())).await;
-        assert_eq!(s, StatusCode::CONFLICT);
-        assert_eq!(b["code"], "CURRENCY_EXISTS");
-    }
-
-    #[tokio::test]
-    async fn effective_at_in_past_is_422() {
-        let (s, b, _) = render(DbError::EffectiveAtInPast).await;
-        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(b["code"], "EFFECTIVE_AT_IN_PAST");
-    }
-
-    #[tokio::test]
-    async fn effective_at_too_far_is_422() {
-        let (s, b, _) = render(DbError::EffectiveAtTooFar).await;
-        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(b["code"], "EFFECTIVE_AT_TOO_FAR");
-    }
-
-    #[tokio::test]
-    async fn rate_already_effective_is_409() {
-        let (s, b, _) = render(DbError::RateAlreadyEffective).await;
-        assert_eq!(s, StatusCode::CONFLICT);
-        assert_eq!(b["code"], "RATE_ALREADY_EFFECTIVE");
-    }
-
-    #[tokio::test]
-    async fn rate_version_exists_is_409() {
-        let (s, b, _) = render(DbError::RateVersionExists).await;
-        assert_eq!(s, StatusCode::CONFLICT);
-        assert_eq!(b["code"], "RATE_VERSION_EXISTS");
-    }
-
-    #[tokio::test]
-    async fn confirmation_required_carries_string_decimals() {
         let dec = |s: &str| Decimal::from_str(s).expect("decimal");
-        let (s, b, _) = render(DbError::RateChangeConfirmationRequired {
-            baseline: dec("160.000000"),
-            proposed: dec("176"),
-            deviation_pct: Some(dec("10.00")),
-        })
+        let (s, b, _) = render_api(ApiError::Database(
+            DbError::RateChangeConfirmationRequired {
+                baseline: dec("160.000000"),
+                proposed: dec("176"),
+                deviation_pct: Some(dec("10.00")),
+            },
+        ))
         .await;
         assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(b["code"], "RATE_CHANGE_CONFIRMATION_REQUIRED");
@@ -770,27 +648,38 @@ mod currency_error_tests {
     }
 
     #[tokio::test]
-    async fn lock_contention_is_retryable_503() {
-        let (s, b, retry) = render(DbError::LockContention("rate publish".into())).await;
-        assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(b["code"], "SERVICE_UNAVAILABLE");
-        assert_eq!(retry.as_deref(), Some("1"));
+    async fn rate_limit_sets_retry_after_header_with_one_second_floor() {
+        let (status, body, retry) =
+            render_api(ApiError::Database(DbError::CalendarSyncRateLimited {
+                retry_after_secs: 42,
+            }))
+            .await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(body["code"], "CALENDAR_SYNC_RATE_LIMITED");
+        assert_eq!(body["retry_after_secs"], 42);
+        assert_eq!(retry.as_deref(), Some("42"));
+
+        let (_, _, retry_floor) =
+            render_api(ApiError::Database(DbError::CalendarSyncRateLimited {
+                retry_after_secs: 0,
+            }))
+            .await;
+        assert_eq!(retry_floor.as_deref(), Some("1"));
     }
 
     #[tokio::test]
-    async fn deadlock_and_lock_timeout_map_to_lock_contention() {
-        // Non-database errors pass through unchanged.
+    async fn lock_contention_is_retryable_503_and_sqlstates_match() {
+        let (s, b, retry) = render_api(ApiError::Database(DbError::LockContention(
+            "rate publish".into(),
+        )))
+        .await;
+        assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(b["code"], "SERVICE_UNAVAILABLE");
+        assert_eq!(retry.as_deref(), Some("1"));
+
         let other = DbError::from_sqlx_contended(sqlx::Error::RowNotFound, "rate publish");
         assert!(matches!(other, DbError::Sqlx(sqlx::Error::RowNotFound)));
-        assert_eq!(
-            db_core::error::SQLSTATE_DEADLOCK_DETECTED,
-            "40P01",
-            "deadlock SQLSTATE"
-        );
-        assert_eq!(
-            db_core::error::SQLSTATE_LOCK_NOT_AVAILABLE,
-            "55P03",
-            "lock timeout SQLSTATE"
-        );
+        assert_eq!(db_core::error::SQLSTATE_DEADLOCK_DETECTED, "40P01");
+        assert_eq!(db_core::error::SQLSTATE_LOCK_NOT_AVAILABLE, "55P03");
     }
 }

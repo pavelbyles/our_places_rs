@@ -186,35 +186,29 @@ mod currency_tests {
     use super::*;
 
     #[test]
-    fn accepts_three_uppercase_letters() {
-        let code = CurrencyCode::try_from("USD").expect("valid");
-        assert_eq!(code.as_str(), "USD");
-        assert_eq!(code.to_string(), "USD");
-    }
+    fn currency_code_validation_and_serde() {
+        for (raw, valid) in [
+            ("USD", true),
+            ("JMD", true),
+            ("usd", false),
+            ("Usd", false),
+            ("US", false),
+            ("USDD", false),
+            ("", false),
+            ("U$D", false),
+            ("U1D", false),
+            (" USD", false),
+            ("ÜSD", false),
+        ] {
+            let parsed = CurrencyCode::try_from(raw);
+            assert_eq!(parsed.is_ok(), valid, "{raw:?}");
+            if valid {
+                let code = parsed.expect("valid code");
+                assert_eq!(code.as_str(), raw);
+                assert_eq!(code.to_string(), raw);
+            }
+        }
 
-    #[test]
-    fn rejects_lowercase() {
-        assert!(CurrencyCode::try_from("usd").is_err());
-        assert!(CurrencyCode::try_from("Usd").is_err());
-    }
-
-    #[test]
-    fn rejects_wrong_length() {
-        assert!(CurrencyCode::try_from("US").is_err());
-        assert!(CurrencyCode::try_from("USDD").is_err());
-        assert!(CurrencyCode::try_from("").is_err());
-    }
-
-    #[test]
-    fn rejects_non_letters_and_whitespace() {
-        assert!(CurrencyCode::try_from("U$D").is_err());
-        assert!(CurrencyCode::try_from("U1D").is_err());
-        assert!(CurrencyCode::try_from(" USD").is_err());
-        assert!(CurrencyCode::try_from("ÜSD").is_err());
-    }
-
-    #[test]
-    fn serde_round_trips_and_rejects_invalid() {
         let code: CurrencyCode = serde_json::from_str("\"JMD\"").expect("valid json code");
         assert_eq!(serde_json::to_string(&code).expect("serialise"), "\"JMD\"");
         assert!(serde_json::from_str::<CurrencyCode>("\"jmd\"").is_err());
