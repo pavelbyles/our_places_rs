@@ -185,7 +185,7 @@ async fn test_post_loggers_role_claim_alone_is_not_admin() {
             exp,
             role: "admin".to_string(),
         },
-        &jsonwebtoken::EncodingKey::from_secret(b"secret"),
+        &jsonwebtoken::EncodingKey::from_secret(b"secret").unwrap(),
     )
     .unwrap();
 

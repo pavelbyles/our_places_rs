@@ -30,7 +30,7 @@ fn minted_token_carries_subject_and_short_expiry() -> Result<(), Box<dyn std::er
     let token = ServiceJwt::from_secret("test-secret")?.mint(user)?;
     let claims = decode::<Claims>(
         &token,
-        &DecodingKey::from_secret(b"test-secret"),
+        &DecodingKey::from_secret(b"test-secret")?,
         &Validation::new(Algorithm::HS256),
     )?
     .claims;
