@@ -23,6 +23,9 @@ pub enum DbError {
     /// The listing is inactive, so it can't be quoted or held.
     #[error("This listing is not available for booking")]
     ListingUnavailable,
+    /// Another active listing already uses this URL slug.
+    #[error("That listing URL is already in use by another listing.")]
+    ListingSlugExists,
     /// Target booking cannot be modified in its current state or dates.
     #[error("Booking is not in a modifiable state: {0}")]
     BookingNotModifiable(String),

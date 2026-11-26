@@ -1554,4 +1554,175 @@ mod batched_override_tests {
         assert!(!found.contains_key(&ids[1]), "only meets the stay");
         assert!(!found.contains_key(&ids[2]), "has none");
     }
+
+    #[tokio::test]
+    async fn slug_update_conflict_rollback_reuse_and_legacy_noop() {
+        use crate::error::DbError;
+        use crate::listing::{
+            delete_listing, get_listing_by_id, get_listing_by_id_or_slug, update_listing,
+        };
+
+        let test_db = sqlx_db_tester::TestPg::new(
+            {
+                dotenvy::dotenv().ok();
+                env::var("DATABASE_URL").expect("DATABASE_URL must be set")
+            },
+            std::path::Path::new("migrations"),
+        );
+        let pool = test_db.get_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let host = create_test_user_with_host_profile(&mut conn).await;
+        drop(conn);
+
+        let make = |name: &str| NewListing {
+            user_id: host,
+            name: name.to_string(),
+            description: None,
+            listing_structure_id: 1,
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(200.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: None,
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
+            is_active: true,
+            location_privacy: None,
+        };
+
+        let a = create_listing(
+            &pool,
+            &make(&format!("Coral Cove {}", Uuid::now_v7().simple())),
+        )
+        .await
+        .unwrap();
+        let b = create_listing(
+            &pool,
+            &make(&format!("Palm Bay {}", Uuid::now_v7().simple())),
+        )
+        .await
+        .unwrap();
+        let old_a_slug = a.slug.clone();
+        let new_a_slug = format!("coral-cove-{}", &Uuid::now_v7().simple().to_string()[..8]);
+
+        // 1. Update listing A's slug; old slug immediately reusable by listing B.
+        let updated_a = update_listing(
+            &pool,
+            a.id,
+            &UpdatedListing {
+                slug: Some(new_a_slug.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated_a.slug, new_a_slug);
+        assert!(get_listing_by_id_or_slug(&pool, &old_a_slug).await.is_err());
+
+        let updated_b = update_listing(
+            &pool,
+            b.id,
+            &UpdatedListing {
+                slug: Some(old_a_slug.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated_b.slug, old_a_slug);
+
+        // 2. Duplicate active slug fails atomically (no partial save, no orphan history row).
+        let history_before: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM listing_history WHERE listing_id = $1")
+                .bind(b.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let conflict = update_listing(
+            &pool,
+            b.id,
+            &UpdatedListing {
+                name: Some("Should Roll Back".into()),
+                slug: Some(new_a_slug.clone()),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(conflict, Err(DbError::ListingSlugExists)));
+        let b_after = get_listing_by_id(&pool, b.id).await.unwrap();
+        assert_eq!(b_after.listing.name, b.name);
+        assert_eq!(b_after.listing.slug, old_a_slug);
+        let history_after: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM listing_history WHERE listing_id = $1")
+                .bind(b.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(history_before, history_after);
+
+        // 3. Soft-deleting A releases its slug and blocks further updates to A.
+        delete_listing(&pool, a.id, false).await.unwrap();
+        let update_deleted = update_listing(
+            &pool,
+            a.id,
+            &UpdatedListing {
+                description: Some("Nope".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(
+            update_deleted,
+            Err(DbError::Sqlx(sqlx::Error::RowNotFound))
+        ));
+
+        let b_reused = update_listing(
+            &pool,
+            b.id,
+            &UpdatedListing {
+                slug: Some(new_a_slug.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(b_reused.slug, new_a_slug);
+
+        // 4. Legacy short slug is not blocked on unrelated edits when unchanged or None.
+        let legacy_slug = format!("v{}", &Uuid::now_v7().simple().to_string()[..1]);
+        sqlx::query("UPDATE listing SET slug = $1 WHERE id = $2")
+            .bind(&legacy_slug)
+            .bind(b.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let b_legacy = update_listing(
+            &pool,
+            b.id,
+            &UpdatedListing {
+                description: Some("Updated description".into()),
+                slug: Some(legacy_slug.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(b_legacy.slug, legacy_slug);
+        assert_eq!(b_legacy.description.as_deref(), Some("Updated description"));
+    }
 }

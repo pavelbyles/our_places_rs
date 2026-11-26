@@ -979,6 +979,9 @@ pub struct UpdatedListing {
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: Option<String>,
 
+    /// Updated URL slug. `None` leaves the existing slug unchanged.
+    pub slug: Option<String>,
+
     /// Updated longer description.
     #[validate(length(
         max = 2000,

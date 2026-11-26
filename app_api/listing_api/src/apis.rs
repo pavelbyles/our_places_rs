@@ -500,6 +500,7 @@ async fn get_listing_by_id(
         (status = 400, description = "Validation error"),
         (status = 401, description = "Missing or invalid user token"),
         (status = 403, description = "Not the listing's owner or an admin"),
+        (status = 409, description = "Listing slug already in use"),
         (status = 500, description = "Internal server error")
     )
 )]
@@ -630,6 +631,7 @@ async fn create_listing(
         (status = 400, description = "Validation error"),
         (status = 401, description = "Missing or invalid user token"),
         (status = 403, description = "Not the listing's owner or an admin"),
+        (status = 409, description = "Listing slug already in use"),
         (status = 500, description = "Internal server error")
     )
 )]
@@ -701,6 +703,7 @@ async fn update_listing(
 
     let updated_data = UpdatedListing {
         name: req_data.name,
+        slug: req_data.slug,
         description: req_data.description,
         listing_structure_id: structure_id,
         country: req_data.country,

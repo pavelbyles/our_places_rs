@@ -1551,6 +1551,132 @@ mod gap_limit_tests {
             assert_eq!(resp.status(), expected, "update with discount {pct}");
         }
     }
+
+    #[actix_web::test]
+    async fn update_listing_slug_validates_and_returns_409_on_conflict() {
+        dotenvy::dotenv().ok();
+        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let user_id = create_test_user(&mut conn).await;
+        drop(conn);
+        let app = test::init_service(
+            App::new()
+                .app_data(crate::location_key::test_key_data())
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let make = |name: &str| common::models::NewListingRequest {
+            name: name.to_string(),
+            user_id,
+            description: None,
+            listing_structure: "Villa".to_string(),
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(200.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: None,
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: 1,
+            extra_guest_fee: None,
+            is_active: true,
+            location_privacy: None,
+        };
+
+        let r1 = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .insert_header(admin_auth())
+                .uri("/api/v1/listings")
+                .set_json(make(&format!("Slug One {}", Uuid::now_v7().simple())))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(r1.status(), 201);
+        let l1: ListingResponse = test::read_body_json(r1).await;
+
+        let r2 = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .insert_header(admin_auth())
+                .uri("/api/v1/listings")
+                .set_json(make(&format!("Slug Two {}", Uuid::now_v7().simple())))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(r2.status(), 201);
+        let l2: ListingResponse = test::read_body_json(r2).await;
+
+        // Invalid slugs -> 400 Bad Request
+        for bad in ["Bad Slug!", "ab", "550e8400-e29b-41d4-a716-446655440000"] {
+            let resp = test::call_service(
+                &app,
+                test::TestRequest::patch()
+                    .insert_header(admin_auth())
+                    .uri(&format!("/api/v1/listings/{}", l1.id))
+                    .set_json(UpdatedListingRequest {
+                        slug: Some(bad.to_string()),
+                        ..Default::default()
+                    })
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(resp.status(), 400, "expected 400 for invalid slug `{bad}`");
+        }
+
+        // Valid slug update -> 200 OK
+        let chosen = format!("custom-villa-{}", &Uuid::now_v7().simple().to_string()[..8]);
+        let ok_resp = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .insert_header(admin_auth())
+                .uri(&format!("/api/v1/listings/{}", l1.id))
+                .set_json(UpdatedListingRequest {
+                    slug: Some(chosen.clone()),
+                    ..Default::default()
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(ok_resp.status(), 200);
+        let updated: ListingResponse = test::read_body_json(ok_resp).await;
+        assert_eq!(updated.slug, chosen);
+
+        // Duplicate slug on l2 -> 409 Conflict with LISTING_SLUG_EXISTS
+        let conflict_resp = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .insert_header(admin_auth())
+                .uri(&format!("/api/v1/listings/{}", l2.id))
+                .set_json(UpdatedListingRequest {
+                    slug: Some(chosen),
+                    ..Default::default()
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(conflict_resp.status(), 409);
+        let body: serde_json::Value = test::read_body_json(conflict_resp).await;
+        assert_eq!(body["code"], "LISTING_SLUG_EXISTS");
+    }
 }
 
 /// Captures what the current test logs.

@@ -24,7 +24,7 @@
   - **Verification Command:** `cargo test -p common && SQLX_OFFLINE=true cargo check --workspace --all-features --tests && SQLX_OFFLINE=true cargo clippy -p common --all-targets --all-features -- -D warnings -D missing_docs`
   - **Dependencies:** None
 
-- [ ] **Task 2: Partial Unique Index Migration, Atomic DB Update & 409 API Contract (`db_core`, `api_core`, `listing_api`)**
+- [x] **Task 2: Partial Unique Index Migration, Atomic DB Update & 409 API Contract (`db_core`, `api_core`, `listing_api`)**
   - **Scope:** M
   - **Description:** Create immutable migration via `sqlx migrate add listing_slug_partial_unique_index` dropping `CONSTRAINT listing_slug_unique` and creating `CREATE UNIQUE INDEX listing_slug_unique ON listing (slug) WHERE deleted_at IS NULL;`. Add `DbError::ListingSlugExists` (`db_core/src/error.rs`) and `UpdatedListing.slug` (`db_core/src/models.rs`). In `db_core/src/listing/write.rs`, add `AND deleted_at IS NULL` to `update_listing_with_conn`'s `SELECT ... FOR UPDATE` and `UPDATE`, skip unchanged slugs (`None`), validate changed slugs, add `slug = COALESCE($30, slug)`, map `23505` on `listing_slug_unique` to `DbError::ListingSlugExists` in both `update_listing_with_conn` and `create_listing`, and emit `tracing::info!` on slug change. Refresh `.sqlx/` via `cargo sqlx prepare --workspace`. Map `DbError::ListingSlugExists` to `409 Conflict` (`LISTING_SLUG_EXISTS`) in both `status_code()` and `error_response()` in `app_api/api_core/src/error.rs` (plus table test). Thread `req_data.slug` in `app_api/listing_api/src/apis.rs` and document `409` in `#[utoipa::path]`. Add DB and API integration tests.
   - **Files Touched:**
@@ -38,10 +38,10 @@
     - `app_api/listing_api/src/apis.rs`
     - `app_api/listing_api/src/apis_test.rs`
   - **Acceptance Criteria:**
-    - [ ] Soft-deleted listings release their slugs and cannot be mutated via `update_listing_with_conn`.
-    - [ ] Duplicate active slug returns `DbError::ListingSlugExists` (`409 LISTING_SLUG_EXISTS`) and rolls back `listing_history` and `listing` atomically.
-    - [ ] Replaced slugs are immediately reusable; legacy short slugs succeed on unrelated edits when unchanged.
-    - [ ] `cargo sqlx prepare --workspace --check` passes.
+    - [x] Soft-deleted listings release their slugs and cannot be mutated via `update_listing_with_conn`.
+    - [x] Duplicate active slug returns `DbError::ListingSlugExists` (`409 LISTING_SLUG_EXISTS`) and rolls back `listing_history` and `listing` atomically.
+    - [x] Replaced slugs are immediately reusable; legacy short slugs succeed on unrelated edits when unchanged.
+    - [x] `cargo sqlx prepare --workspace --check` passes.
   - **Verification Command:** `sqlx migrate run && cargo sqlx prepare --workspace --check && cargo test -p db_core -p api_core -p listing_api && SQLX_OFFLINE=true cargo clippy -p db_core -p api_core -p listing_api --all-targets --all-features -- -D warnings -D missing_docs`
   - **Dependencies:** Task 1
 
