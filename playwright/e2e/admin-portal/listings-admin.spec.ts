@@ -299,4 +299,65 @@ test.describe('Admin Portal - Listings Management', () => {
     expect(staffResp?.status()).toBe(403);
     await staffCtx.close();
   });
+
+  test('renaming keeps slug by default, supports opt-in suggestion and manual slug edit, and rejects invalid or duplicate slugs inline', { tag: '@new-only' }, async ({ authenticatedAdminPage: page, request }) => {
+    const listing = createListingCopy();
+    const other = createListingCopy();
+    const suffix = Date.now().toString(36);
+    const originalSlug = listing.slug;
+    const otherSlug = other.slug;
+
+    // 1. Rename without accepting suggestion -> slug remains unchanged
+    await page.goto(`/admin/listings/${listing.id}/edit`);
+    await expect(page.locator('#listing-slug')).toHaveValue(originalSlug);
+    const renamedNoSlug = `Coral Cove Keep ${suffix}`;
+    await page.locator('#listing-name').fill(renamedNoSlug);
+    await expect(page.locator('#listing-slug-suggestion')).toContainText(`coral-cove-keep-${suffix}`);
+    await page.locator('#btn-save-listing').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/listings/${listing.id}$`));
+    expect(psql(`SELECT slug FROM listing WHERE id = '${listing.id}';`)).toBe(originalSlug);
+
+    // 2. Rename and click "Use suggested URL" -> slug updates, new URL loads, old URL 404s
+    await page.goto(`/admin/listings/${listing.id}/edit`);
+    const renamedWithSlug = `Coral Cove Estate ${suffix}`;
+    const suggestedSlug = `coral-cove-estate-${suffix}`;
+    await page.locator('#listing-name').fill(renamedWithSlug);
+    const applyBtn = page.locator('#listing-slug-suggestion button', { hasText: 'Use suggested URL' });
+    await expect(applyBtn).toBeVisible();
+    await applyBtn.click();
+    await expect(page.locator('#listing-slug')).toHaveValue(suggestedSlug);
+    await page.locator('#btn-save-listing').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/listings/${listing.id}$`));
+    expect(psql(`SELECT slug FROM listing WHERE id = '${listing.id}';`)).toBe(suggestedSlug);
+
+    const newUrlResp = await request.get(`${TEST_CONFIG.guestPortalUrl}/listings/${suggestedSlug}`);
+    expect(newUrlResp.status()).toBe(200);
+    const oldUrlResp = await request.get(`${TEST_CONFIG.guestPortalUrl}/listings/${originalSlug}`);
+    expect(oldUrlResp.status()).toBe(404);
+
+    // 3. Manual slug edit without changing name
+    await page.goto(`/admin/listings/${listing.id}/edit`);
+    const manualSlug = `sea-grape-manual-${suffix}`;
+    await page.locator('#listing-slug').fill(manualSlug);
+    await page.locator('#btn-save-listing').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/listings/${listing.id}$`));
+    expect(psql(`SELECT slug FROM listing WHERE id = '${listing.id}';`)).toBe(manualSlug);
+
+    // 4. Invalid format rejected inline without saving partial price edit
+    const priceBefore = psql(`SELECT price_per_night FROM listing WHERE id = '${listing.id}';`);
+    await page.goto(`/admin/listings/${listing.id}/edit`);
+    await page.locator('input[name="price_per_night"]').fill('999.99');
+    await page.locator('#listing-slug').fill('Bad Slug!');
+    await page.locator('#btn-save-listing').click();
+    await expect(page.locator('#listing-slug-error')).toBeVisible();
+    await expect(page.locator('#listing-slug')).toHaveValue('Bad Slug!');
+    expect(psql(`SELECT price_per_night FROM listing WHERE id = '${listing.id}';`)).toBe(priceBefore);
+
+    // 5. Duplicate active slug rejected inline (409) without saving partial price edit
+    await page.locator('#listing-slug').fill(otherSlug);
+    await page.locator('#btn-save-listing').click();
+    await expect(page.locator('#listing-slug-error')).toContainText(/already in use/i);
+    expect(psql(`SELECT slug FROM listing WHERE id = '${listing.id}';`)).toBe(manualSlug);
+    expect(psql(`SELECT price_per_night FROM listing WHERE id = '${listing.id}';`)).toBe(priceBefore);
+  });
 });

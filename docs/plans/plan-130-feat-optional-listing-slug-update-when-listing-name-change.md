@@ -70,13 +70,13 @@
   - **Verification Command:** `topcoat fmt --check && cargo test -p web_ui_common -p web_ui_admin && SQLX_OFFLINE=true cargo clippy -p web_ui_common -p web_ui_admin --all-targets --all-features -- -D warnings -D missing_docs`
   - **Dependencies:** Task 1, Task 2
 
-- [ ] **Task 5: Playwright E2E Coverage & Full Workspace Definition of Done (`playwright`)**
+- [x] **Task 5: Playwright E2E Coverage & Full Workspace Definition of Done (`playwright`)**
   - **Scope:** S
   - **Description:** Add Playwright E2E tests in `playwright/e2e/admin-portal/listings-admin.spec.ts` covering: (1) rename listing keeping default slug, (2) rename listing and click `"Use suggested URL"` confirming new guest URL loads and old URL returns 404, (3) manual slug edit without name change, and (4) invalid format and duplicate active slug rendering inline `#listing-slug-error` without persisting partial price changes. Run all `CONSTRAINTS.md` quality gates across the full workspace.
   - **Files Touched:**
     - `playwright/e2e/admin-portal/listings-admin.spec.ts`
   - **Acceptance Criteria:**
-    - [ ] All new and existing Playwright admin listing tests pass.
-    - [ ] Full workspace `cargo fmt --check`, `topcoat fmt --check`, `cargo sqlx prepare --workspace --check`, `cargo clippy` (`-D warnings`, `-D missing_docs`), panic check, and `cargo test --workspace` pass.
+    - [x] All new and existing Playwright admin listing tests pass.
+    - [x] Full workspace `cargo fmt --check`, `topcoat fmt --check`, `cargo sqlx prepare --workspace --check`, `cargo clippy` (`-D warnings`, `-D missing_docs`), panic check, and `cargo test --workspace` pass.
   - **Verification Command:** `cargo fmt --check && topcoat fmt --check && cargo sqlx prepare --workspace --check && SQLX_OFFLINE=true cargo clippy --workspace --all-targets --all-features -- -D warnings && SQLX_OFFLINE=true cargo clippy --workspace --all-features -- -D missing_docs && cargo test --workspace`
   - **Dependencies:** Task 1, Task 2, Task 3, Task 4
