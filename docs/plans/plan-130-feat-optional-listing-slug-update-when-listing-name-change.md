@@ -45,14 +45,14 @@
   - **Verification Command:** `sqlx migrate run && cargo sqlx prepare --workspace --check && cargo test -p db_core -p api_core -p listing_api && SQLX_OFFLINE=true cargo clippy -p db_core -p api_core -p listing_api --all-targets --all-features -- -D warnings -D missing_docs`
   - **Dependencies:** Task 1
 
-- [ ] **Task 3: Remove Legacy Checkout Currency-Suffix Shim (`web_ui_guest`)**
+- [x] **Task 3: Remove Legacy Checkout Currency-Suffix Shim (`web_ui_guest`)**
   - **Scope:** XS
   - **Description:** Remove `split_currency_suffix` (lines 128–134) and its unconditional 301 redirect in `checkout_page` (lines 599–602) in `web_ui_guest/src/pages/checkout.rs`, retaining `redirect_permanent` and `active_currency_codes` for their remaining callers.
   - **Files Touched:**
     - `web_ui_guest/src/pages/checkout.rs`
   - **Acceptance Criteria:**
-    - [ ] `GET /checkout/{slug}` resolves directly as a listing slug without stripping `-usd`/`-jmd`/`-eur` suffixes.
-    - [ ] `web_ui_guest` tests and clippy pass with zero warnings.
+    - [x] `GET /checkout/{slug}` resolves directly as a listing slug without stripping `-usd`/`-jmd`/`-eur` suffixes.
+    - [x] `web_ui_guest` tests and clippy pass with zero warnings.
   - **Verification Command:** `cargo test -p web_ui_guest && SQLX_OFFLINE=true cargo clippy -p web_ui_guest --all-targets --all-features -- -D warnings`
   - **Dependencies:** None
 
