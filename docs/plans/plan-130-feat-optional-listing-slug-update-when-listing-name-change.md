@@ -56,7 +56,7 @@
   - **Verification Command:** `cargo test -p web_ui_guest && SQLX_OFFLINE=true cargo clippy -p web_ui_guest --all-targets --all-features -- -D warnings`
   - **Dependencies:** None
 
-- [ ] **Task 4: Edit-Only Admin Slug UX, Inline Errors & Stateless HTMX Suggestion (`web_ui_common`, `web_ui_admin`)**
+- [x] **Task 4: Edit-Only Admin Slug UX, Inline Errors & Stateless HTMX Suggestion (`web_ui_common`, `web_ui_admin`)**
   - **Scope:** M
   - **Description:** Add a delegated click branch in `web_ui_common/src/assets/ui.js` (inside the existing click listener at line 157) for `[data-apply-slug-target][data-apply-slug-value]` that populates the target input, focuses it, and clears children of `#listing-slug-suggestion` (`replaceChildren()`). In `web_ui_admin/src/pages/listings/form.rs`, add `pub slug: String` to `ListingFields`, add `#[default] slug_error: Option<String>` to `listing_form` (keeping parameter count within Clippy's limit), render the edit-only `/listings/` + `#listing-slug` input, `#listing-slug-suggestion`, `#listing-slug-error`, 404 warning, and HTMX attributes (`hx-get="/admin/listings/slug-suggestion"`, `hx-trigger="input changed delay:250ms"`, `hx-target="#listing-slug-suggestion"`, `hx-include="#listing-name, #listing-slug"`) on `#listing-name`, and add `split_api_rejection` (keeping `api_rejection_messages` intact for `create.rs`). In `web_ui_admin/src/pages/listings/edit.rs`, add stateless `GET /admin/listings/slug-suggestion` (`host_or_admin`-gated, zero DB/API calls) and update `POST /admin/listings/{id}/edit` to diff against authoritative DB `listing.slug`, validate changed slugs alongside `fields.validate(...)`, and route format/conflict errors to `#listing-slug-error`. Add unit tests in `form.rs`.
   - **Files Touched:**
@@ -64,9 +64,9 @@
     - `web_ui_admin/src/pages/listings/form.rs`
     - `web_ui_admin/src/pages/listings/edit.rs`
   - **Acceptance Criteria:**
-    - [ ] Slug field and HTMX suggestion render only on `/admin/listings/{id}/edit`, never on create or clone.
-    - [ ] Clicking `"Use suggested URL"` populates `#listing-slug` without removing `#listing-slug-suggestion` from the DOM.
-    - [ ] Unchanged slugs send `slug: None`; invalid/duplicate slugs render inline at `#listing-slug-error` without partial saves.
+    - [x] Slug field and HTMX suggestion render only on `/admin/listings/{id}/edit`, never on create or clone.
+    - [x] Clicking `"Use suggested URL"` populates `#listing-slug` without removing `#listing-slug-suggestion` from the DOM.
+    - [x] Unchanged slugs send `slug: None`; invalid/duplicate slugs render inline at `#listing-slug-error` without partial saves.
   - **Verification Command:** `topcoat fmt --check && cargo test -p web_ui_common -p web_ui_admin && SQLX_OFFLINE=true cargo clippy -p web_ui_common -p web_ui_admin --all-targets --all-features -- -D warnings -D missing_docs`
   - **Dependencies:** Task 1, Task 2
 
