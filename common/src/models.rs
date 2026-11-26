@@ -950,6 +950,13 @@ pub fn default_base_currency() -> String {
     "USD".to_string()
 }
 
+/// Validates an optional listing URL slug using [`crate::slug::validate_listing_slug`].
+pub fn validate_optional_listing_slug(slug: &str) -> Result<(), validator::ValidationError> {
+    crate::slug::validate_listing_slug(slug).map_err(|msg| {
+        validator::ValidationError::new("invalid_listing_slug").with_message(msg.into())
+    })
+}
+
 /// Request to change a listing. Absent fields stay as they are.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, Default)]
 pub struct UpdatedListingRequest {
@@ -958,6 +965,12 @@ pub struct UpdatedListingRequest {
     #[schema(value_type = Option<String>, example = "Zen Loft")]
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: Option<String>,
+
+    /// Updated URL slug. Omit or pass `null` to keep the existing slug unchanged.
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "zen-loft")]
+    #[validate(custom(function = "validate_optional_listing_slug"))]
+    pub slug: Option<String>,
 
     /// Updated longer description.
     #[serde(default)]

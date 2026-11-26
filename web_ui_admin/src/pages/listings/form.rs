@@ -617,6 +617,7 @@ impl ValidListing {
         );
         UpdatedListingRequest {
             name: Some(self.name),
+            slug: None,
             description: self.description,
             listing_structure: Some(self.listing_structure),
             country: Some(self.country),

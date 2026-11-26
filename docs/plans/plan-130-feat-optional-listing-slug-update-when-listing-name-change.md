@@ -11,7 +11,7 @@
 
 ## Tasks
 
-- [ ] **Task 1: Strict Listing Slug Validation & Suggestion (`common`)**
+- [x] **Task 1: Strict Listing Slug Validation & Suggestion (`common`)**
   - **Scope:** S
   - **Description:** Add documented `validate_listing_slug(input: &str) -> Result<(), &'static str>` (strict 3–60 chars, lowercase ASCII `a-z`/`0-9` + single `-`, no whitespace/uppercase/punctuation, no leading/trailing/consecutive hyphens, rejects 36-char hyphenated and 32-char hex UUIDs) and `suggest_listing_slug(name: &str) -> Option<String>` (caps input at 255 chars, delegates to `slugify`, prefixes `v-` on UUID match within 60 chars, returns `None` if `< 3` chars) to `common/src/slug.rs`. Add `#[serde(default)]` `#[validate(custom(function = "validate_optional_listing_slug"))]` `pub slug: Option<String>` to `UpdatedListingRequest` in `common/src/models.rs` and update existing `UpdatedListingRequest` struct literals (`slug: None`, including `ValidListing::into_update` in `web_ui_admin/src/pages/listings/form.rs`) so the workspace compiles green.
   - **Files Touched:**
@@ -19,8 +19,8 @@
     - `common/src/models.rs`
     - `web_ui_admin/src/pages/listings/form.rs` (struct literal `slug: None` only)
   - **Acceptance Criteria:**
-    - [ ] Unit tests in `common/src/slug.rs` verify all valid/invalid slug cases (boundaries 2/3/60/61, whitespace, uppercase, punctuation, double/leading/trailing hyphens, 36-char and 32-char UUIDs) and `suggest_listing_slug`.
-    - [ ] `UpdatedListingRequest::validate()` rejects malformed `Some(slug)` with field-ready message and accepts `None`.
+    - [x] Unit tests in `common/src/slug.rs` verify all valid/invalid slug cases (boundaries 2/3/60/61, whitespace, uppercase, punctuation, double/leading/trailing hyphens, 36-char and 32-char UUIDs) and `suggest_listing_slug`.
+    - [x] `UpdatedListingRequest::validate()` rejects malformed `Some(slug)` with field-ready message and accepts `None`.
   - **Verification Command:** `cargo test -p common && SQLX_OFFLINE=true cargo check --workspace --all-features --tests && SQLX_OFFLINE=true cargo clippy -p common --all-targets --all-features -- -D warnings -D missing_docs`
   - **Dependencies:** None
 
