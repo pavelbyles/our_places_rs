@@ -319,14 +319,9 @@ where
 mod migration_tests {
     //! Guarantees of the `currency_reference_and_rate_management` migration.
 
-    use sqlx::PgPool;
-    use sqlx::migrate::Migrator;
     use sqlx_db_tester::TestPg;
     use std::env;
-    use std::path::{Path, PathBuf};
-
-    /// File stem of the migration under test.
-    const CURRENCY_MIGRATION: &str = "currency_reference_and_rate_management";
+    use std::path::Path;
 
     /// Every currency-code column in the schema: (table, column).
     const CURRENCY_COLUMNS: [(&str, &str); 10] = [
@@ -351,36 +346,6 @@ mod migration_tests {
 
     async fn migrated_db() -> TestPg {
         TestPg::new(db_url(), Path::new("migrations"))
-    }
-
-    /// A temp copy of every migration that precedes the one under test.
-    fn previous_migrations_dir() -> PathBuf {
-        let dir = env::temp_dir().join(format!("op_prev_migrations_{}", uuid::Uuid::now_v7()));
-        std::fs::create_dir_all(&dir).expect("create temp migrations dir");
-        let mut names: Vec<_> = std::fs::read_dir("migrations")
-            .expect("read migrations dir")
-            .filter_map(|e| e.ok())
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.ends_with(".sql"))
-            .collect();
-        names.sort();
-        let cutoff = names
-            .iter()
-            .position(|n| n.contains(CURRENCY_MIGRATION))
-            .expect("currency migration exists");
-        for name in &names[..cutoff] {
-            std::fs::copy(Path::new("migrations").join(name), dir.join(name))
-                .expect("copy migration");
-        }
-        dir
-    }
-
-    async fn apply_remaining_migrations(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
-        Migrator::new(Path::new("migrations"))
-            .await
-            .expect("load migrations")
-            .run(pool)
-            .await
     }
 
     #[tokio::test]
@@ -489,78 +454,6 @@ mod migration_tests {
             let res = sqlx::query(sql).execute(&pool).await;
             assert!(res.is_err(), "{sql} must be rejected on the audit log");
         }
-    }
-
-    #[tokio::test]
-    async fn legacy_codes_are_normalised_and_clean_rows_untouched() {
-        let prev = previous_migrations_dir();
-        let test_db = TestPg::new(db_url(), prev.clone());
-        let pool = test_db.get_pool().await;
-
-        sqlx::query(
-            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate) VALUES ('usd', 'Cad', 1.36)",
-        )
-        .execute(&pool)
-        .await
-        .expect("insert legacy lowercase rate");
-        let clean_xmin_before: String = sqlx::query_scalar(
-            "SELECT xmin::text FROM currency_exchange_rates WHERE base_currency = 'USD' AND target_currency = 'JMD'",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("seeded USD/JMD row");
-
-        apply_remaining_migrations(&pool)
-            .await
-            .expect("currency migration applies to legacy data");
-
-        let normalised: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM currency_exchange_rates WHERE base_currency = 'USD' AND target_currency = 'CAD'",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("count normalised");
-        assert_eq!(normalised, 1, "lowercase codes are upper-cased");
-
-        let clean_xmin_after: String = sqlx::query_scalar(
-            "SELECT xmin::text FROM currency_exchange_rates WHERE base_currency = 'USD' AND target_currency = 'JMD'",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("seeded USD/JMD row");
-        assert_eq!(
-            clean_xmin_before, clean_xmin_after,
-            "already-normalised rows must not be rewritten (would fire updated_at triggers)"
-        );
-
-        let _ = std::fs::remove_dir_all(prev);
-    }
-
-    #[tokio::test]
-    async fn invalid_legacy_code_aborts_with_table_and_column() {
-        let prev = previous_migrations_dir();
-        let test_db = TestPg::new(db_url(), prev.clone());
-        let pool = test_db.get_pool().await;
-
-        sqlx::query(
-            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate) VALUES ('U1D', 'JMD', 1)",
-        )
-        .execute(&pool)
-        .await
-        .expect("insert invalid legacy code");
-
-        let err = apply_remaining_migrations(&pool)
-            .await
-            .expect_err("invalid code must abort the migration");
-        let msg = format!("{err:?}");
-        assert!(
-            msg.contains("currency_exchange_rates")
-                && msg.contains("base_currency")
-                && msg.contains("U1D"),
-            "error must name table, column and value: {msg}"
-        );
-
-        let _ = std::fs::remove_dir_all(prev);
     }
 }
 

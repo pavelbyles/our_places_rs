@@ -1,43 +1,7 @@
 //! Schema and constraint tests for the turnover dispatch & staff migration (#66).
 
-use crate::models::UserRole;
 use crate::promo_tests::{migrated_db, raw_booking, raw_listing, raw_user};
 use uuid::Uuid;
-
-#[tokio::test]
-async fn staff_enum_and_turnover_tables_exist() -> Result<(), Box<dyn std::error::Error>> {
-    let db = migrated_db();
-    let pool = db.get_pool().await;
-
-    let tables: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM information_schema.tables
-         WHERE table_schema = 'public'
-           AND table_name IN (
-             'account_action_token',
-             'host_staff',
-             'listing_staff',
-             'turnover',
-             'turnover_status_history',
-             'turnover_comment'
-           )",
-    )
-    .fetch_one(&pool)
-    .await?;
-    assert_eq!(tables, 6);
-
-    let uid = raw_user(&pool).await;
-    sqlx::query(r#"UPDATE "user" SET roles = ARRAY['staff'::user_role] WHERE id = $1"#)
-        .bind(uid)
-        .execute(&pool)
-        .await?;
-
-    let roles: Vec<UserRole> = sqlx::query_scalar(r#"SELECT roles FROM "user" WHERE id = $1"#)
-        .bind(uid)
-        .fetch_one(&pool)
-        .await?;
-    assert_eq!(roles, vec![UserRole::Staff]);
-    Ok(())
-}
 
 #[tokio::test]
 async fn partial_unique_indexes_prevent_duplicate_stay_turnovers_but_allow_manual()

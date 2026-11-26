@@ -66,13 +66,14 @@ impl FromRequest for Claims {
                 let mut validation = Validation::new(Algorithm::HS256);
                 validation.validate_exp = true;
 
-                decode::<Claims>(
-                    token,
-                    &DecodingKey::from_secret(secret.as_bytes()),
-                    &validation,
-                )
-                .map(|token_data| token_data.claims)
-                .map_err(|_| ApiError::Unauthorized("Invalid or expired token".into()))
+                let decoding_key = DecodingKey::from_secret(secret.as_bytes()).map_err(|e| {
+                    tracing::error!(error = %e, "cannot build JWT decoding key");
+                    ApiError::Internal
+                })?;
+
+                decode::<Claims>(token, &decoding_key, &validation)
+                    .map(|token_data| token_data.claims)
+                    .map_err(|_| ApiError::Unauthorized("Invalid or expired token".into()))
             });
 
         ready(claims)
@@ -115,12 +116,9 @@ pub fn generate_test_jwt(user_id: Uuid) -> String {
     };
 
     let secret = jwt_secret().unwrap_or_default();
-    encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .unwrap_or_default()
+    EncodingKey::from_secret(secret.as_bytes())
+        .and_then(|key| encode(&Header::default(), &claims, &key))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

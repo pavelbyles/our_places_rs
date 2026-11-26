@@ -274,7 +274,6 @@ Identity management, JWT authentication, user lifecycle, and session tracking:
 | `GET` | `/api/v1/users/user/{email}` | Retrieve user profile by email address |
 | `PATCH` | `/api/v1/users/user/{id}` | Update user profile information |
 | `DELETE` | `/api/v1/users/user/{id}` | Soft-delete a user account |
-| `DELETE` | `/api/v1/users/user/{id}/sessions` | Revoke all active sessions for a user |
 | `POST` | `/api/v1/users/user/{id}/restore` | Restore a soft-deleted user account |
 | `DELETE` | `/api/v1/users/user/{id}/hard` | Permanently purge a user record from the database |
 | `GET` | `/api/v1/users/user/{email}/bookings` | Retrieve all bookings associated with a user email |

@@ -431,15 +431,6 @@ impl TopcoatApiClient {
         common::app_client::delete_session(token_hash).await
     }
 
-    /// Revoke all sessions for a user
-    pub async fn revoke_user_sessions(
-        &self,
-        user_id: Uuid,
-        namespace: Option<&str>,
-    ) -> anyhow::Result<()> {
-        common::app_client::revoke_user_sessions(user_id, namespace).await
-    }
-
     /// Authenticate user credentials with user_api
     pub async fn login_user(&self, req: &LoginRequest) -> anyhow::Result<UserResponse> {
         common::app_client::login_user_at(

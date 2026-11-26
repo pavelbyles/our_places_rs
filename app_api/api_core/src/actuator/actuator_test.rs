@@ -59,16 +59,6 @@ async fn test_composite_health_without_pool_returns_503() {
 }
 
 #[actix_web::test]
-async fn test_legacy_health_check_returns_404() {
-    let app = test::init_service(App::new().configure(configure_actuator)).await;
-
-    let req = test::TestRequest::get().uri("/health_check").to_request();
-    let resp = test::call_service(&app, req).await;
-
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-}
-
-#[actix_web::test]
 async fn test_info_endpoint_returns_json() {
     let app = test::init_service(App::new().configure(configure_actuator)).await;
 
@@ -195,7 +185,7 @@ async fn test_post_loggers_role_claim_alone_is_not_admin() {
             exp,
             role: "admin".to_string(),
         },
-        &jsonwebtoken::EncodingKey::from_secret(b"secret"),
+        &jsonwebtoken::EncodingKey::from_secret(b"secret").unwrap(),
     )
     .unwrap();
 

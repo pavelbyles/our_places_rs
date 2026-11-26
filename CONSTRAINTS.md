@@ -30,14 +30,14 @@ This contract defines the explicit, machine-checkable quality bar for the `our_p
 | Dimension | Rule | Checked By | Stage |
 | :--- | :--- | :--- | :--- |
 | **Formatting** | Rust code standard format | `cargo fmt --check` | Fast loop (<5s) |
-| **Compilation** | Offline compile-time SQLx verification | `SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests` | Fast loop (<10s) |
-| **Strict Linting** | Zero Clippy warnings across all workspace members | `SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings` | Task completion (<30s) |
+| **Compilation** | Offline compile-time SQLx verification | `SQLX_OFFLINE=true cargo check --workspace --all-features --tests` | Fast loop (<10s) |
+| **Strict Linting** | Zero Clippy warnings across all workspace members | `SQLX_OFFLINE=true cargo clippy --workspace --all-features -- -D warnings` | Task completion (<30s) |
 | **Financial Precision** | Zero floats in pricing and booking logic | `! rg -q "f(32\|64)" common/src/pricing.rs app_api/booking_api/` | Task completion (<5s) |
 | **Panic Prevention** | Zero `.unwrap()` / `.expect()` in production crates | `! rg -q "\.(unwrap\|expect)\(" app_api/ common/ db_core/ web_client/src web_ui_common/src web_ui_guest/src web_ui_admin/src` | Task completion (<5s) |
 | **Env Var Hygiene** | No raw string literals in `env::var` calls | `! rg -q 'env::var\("[A-Z0-9_]+"\)' app_api/ common/ db_core/` | Task completion (<5s) |
 | **Doc Coverage** | 100% public structs, fields, enums, variants documented | `SQLX_OFFLINE=true cargo clippy --workspace --all-features -- -D missing_docs` | Task completion (<30s) |
 | **SQLx Sync** | Offline metadata matches database queries | `cargo sqlx prepare --workspace --check` | Pre-merge & CI |
-| **Backend Tests** | 100% pass rate across API & DB test targets | `cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj` | Task completion (<60s) |
+| **Backend Tests** | 100% pass rate across API & DB test targets | `cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin` | Task completion (<60s) |
 | **Web UI Tests** | 100% pass rate across the Topcoat UI portals and their shared crates | `cargo test -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin --verbose` | Task completion (<60s) |
 | **Dependency CVEs** | Zero unmitigated vulnerabilities | `cargo audit` (abiding by `.cargo/audit.toml`) | Pre-merge & CI |
 | **Static Hygiene** | DeepSource / SonarQube quality gate | DeepSource & SonarCloud CI scanners | CI |

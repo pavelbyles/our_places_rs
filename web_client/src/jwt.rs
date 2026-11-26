@@ -52,10 +52,12 @@ impl ServiceJwt {
     pub fn from_secret(secret: &str) -> Result<Self, JwtError> {
         Some(secret)
             .filter(|s| !s.trim().is_empty())
-            .map(|s| Self {
-                key: EncodingKey::from_secret(s.as_bytes()),
-            })
             .ok_or(JwtError::MissingSecret)
+            .and_then(|s| {
+                Ok(Self {
+                    key: EncodingKey::from_secret(s.as_bytes())?,
+                })
+            })
     }
 
     /// Mints a token for `user_id` that expires in [`SERVICE_TOKEN_TTL_SECS`].

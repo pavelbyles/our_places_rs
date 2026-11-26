@@ -43,7 +43,7 @@ cargo fmt --check
 ### 5. Linter Check (Clippy)
 Run clippy across all workspace members with warnings treated as errors:
 ```bash
-SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings
+SQLX_OFFLINE=true cargo clippy --workspace --all-features --manifest-path Cargo.toml -- -D warnings
 ```
 *(Note: If this command fails due to a `DATABASE_URL` error, prepend `RUN_ENV=Development DATABASE_URL=postgres://postgres:password@localhost:5432/our_places` and run it again).*
 
@@ -55,7 +55,7 @@ Ensure offline query data is prepared and verify all crates and test targets com
    ```
 2. Verify offline compilation succeeds across all library and test targets:
    ```bash
-   SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests
+   SQLX_OFFLINE=true cargo check --workspace --all-features --tests
    ```
 > [!WARNING]
 > Test setup queries in `#[cfg(test)]` should avoid `sqlx::query!` compile-time macros unless prepared; use runtime `sqlx::query(...).bind(...)` instead to prevent `SQLX_OFFLINE=true` query missing errors.
@@ -65,7 +65,7 @@ Run the test suites in the same isolated configurations as CI to catch environme
 
 1. **Backend & Shared Domain Tests (mirrors `test-api` job)**:
    ```bash
-   cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
+   cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin
    ```
 2. **Web UI Tests (mirrors `test-web-ui` job)**:
    ```bash

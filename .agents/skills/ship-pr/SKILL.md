@@ -22,14 +22,14 @@ Execute all checks outlined in [`sanity-check-workflow.md`](sanity-check-workflo
 cargo fmt --check
 
 # 2. Linting
-cargo clippy --workspace --exclude protoproj --all-features -- -D warnings
+cargo clippy --workspace --all-features -- -D warnings
 
 # 3. Offline SQLx metadata sync
 cargo sqlx prepare --workspace --check || cargo sqlx prepare --workspace
 cargo sqlx prepare --workspace -- --all-targets
 
 # 4. Workspace tests
-cargo test --workspace --exclude protoproj
+cargo test --workspace
 ```
 
 ### Step 2: "Never Do" Compliance Scan

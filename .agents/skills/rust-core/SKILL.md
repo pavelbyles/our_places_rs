@@ -26,7 +26,7 @@ capabilities:
 tools:
   - name: cargo clippy
     description: Check for idiomatic Rust code
-    entrypoint: cargo clippy --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings
+    entrypoint: cargo clippy --workspace --all-features --manifest-path Cargo.toml -- -D warnings
   - name: format code
     description: Format Rust code
     entrypoint: cargo fmt --check
@@ -66,5 +66,5 @@ Since the database is important, always update sqlx files after database changes
 - **Philosophy & Patterns**: Read `references/idiomatic_rust.md` for guidance on error handling, monadic combinators, iterators, and project structure.
 - **Typestate Pattern**: Read [`../type-state/SKILL.md`](../type-state/SKILL.md) for compile-time state machines, protocol verification, and typestate builders.
 - **Static Analysis Hygiene**: Read `../sonarqube-guard/SKILL.md` for SonarQube, SonarCloud, and DeepSource compliance rules.
-- **Tools**: Use `cargo clippy --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings` to check for idiomatic Rust code.
+- **Tools**: Use `cargo clippy --workspace --all-features --manifest-path Cargo.toml -- -D warnings` to check for idiomatic Rust code.
 </resources>

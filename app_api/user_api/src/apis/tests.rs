@@ -50,7 +50,7 @@ fn get_test_settings() -> Settings {
 }
 
 #[actix_web::test]
-async fn test_create_user_booker_with_profile() {
+async fn test_create_user_role_and_profile_matrix() {
     dotenvy::dotenv().ok();
     let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let migrations_path = Path::new("../../db_core/migrations");
@@ -65,163 +65,129 @@ async fn test_create_user_booker_with_profile() {
     )
     .await;
 
-    let email = format!("booker_{}@example.com", Uuid::now_v7());
-    let req_body = json!({
-        "email": email,
-        "password": "password123",
-        "first_name": "Test",
-        "last_name": "Booker",
-        "phone_number": "+1234567890",
-        "is_active": true,
-        "roles": ["booker"],
-        "booker_profile": {
-            "emergency_contacts": {"name": "Emergency", "phone": "911"},
-            "booking_preferences": {"smoking": false},
-            "loyalty": {"points": 100}
+    let cases: Vec<(&str, serde_json::Value, u16, Vec<UserRole>, Option<&str>)> = vec![
+        (
+            "booker with profile",
+            json!({
+                "email": format!("booker_{}@example.com", Uuid::now_v7()),
+                "password": "password123",
+                "first_name": "Test",
+                "last_name": "Booker",
+                "phone_number": "+1234567890",
+                "is_active": true,
+                "roles": ["booker"],
+                "booker_profile": {
+                    "emergency_contacts": {"name": "Emergency", "phone": "911"},
+                    "booking_preferences": {"smoking": false},
+                    "loyalty": {"points": 100}
+                }
+            }),
+            201,
+            vec![UserRole::Booker],
+            None,
+        ),
+        (
+            "host with profile",
+            json!({
+                "email": format!("host_{}@example.com", Uuid::now_v7()),
+                "password": "password123",
+                "first_name": "Test",
+                "last_name": "Host",
+                "phone_number": "+1987654321",
+                "is_active": true,
+                "roles": ["host"],
+                "host_profile": {
+                    "verified_status": "verified",
+                    "payout_details": {"account": "123"},
+                    "description": "Super host"
+                }
+            }),
+            201,
+            vec![UserRole::Host],
+            None,
+        ),
+        (
+            "admin with attributes",
+            json!({
+                "email": format!("admin_{}@example.com", Uuid::now_v7()),
+                "password": "password123",
+                "first_name": "Test",
+                "last_name": "Admin",
+                "phone_number": "+1122334455",
+                "is_active": true,
+                "roles": ["admin"],
+                "attributes": {"access_level": "super"}
+            }),
+            201,
+            vec![UserRole::Admin],
+            Some("super"),
+        ),
+        (
+            "mixed booker+host",
+            json!({
+                "email": format!("mixed_{}@example.com", Uuid::now_v7()),
+                "password": "password123",
+                "first_name": "Test",
+                "last_name": "Mixed",
+                "phone_number": "+1555666777",
+                "is_active": true,
+                "roles": ["booker", "host"],
+                "booker_profile": {"loyalty": {"points": 50}},
+                "host_profile": {"verified_status": "pending"}
+            }),
+            201,
+            vec![UserRole::Booker, UserRole::Host],
+            None,
+        ),
+        (
+            "booker missing profile",
+            json!({
+                "email": format!("fail_booker_{}@example.com", Uuid::now_v7()),
+                "password": "password123",
+                "first_name": "Fail",
+                "last_name": "Booker",
+                "phone_number": "+1234567890",
+                "is_active": true,
+                "roles": ["booker"]
+            }),
+            400,
+            vec![],
+            None,
+        ),
+        (
+            "host missing profile",
+            json!({
+                "email": format!("fail_host_{}@example.com", Uuid::now_v7()),
+                "password": "password123",
+                "first_name": "Fail",
+                "last_name": "Host",
+                "phone_number": "+1234567890",
+                "is_active": true,
+                "roles": ["host"]
+            }),
+            400,
+            vec![],
+            None,
+        ),
+    ];
+
+    for (label, req_body, expected_status, expected_roles, expected_access_level) in cases {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/users")
+            .set_json(&req_body)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status().as_u16(), expected_status, "{label}");
+        if expected_status == 201 {
+            let body: UserResponse = test::read_body_json(resp).await;
+            for role in expected_roles {
+                assert!(body.roles.contains(&role.to_string()), "{label}: {role}");
+            }
+            if let Some(level) = expected_access_level {
+                assert_eq!(body.attributes["access_level"], level, "{label}");
+            }
         }
-    });
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
-        .set_json(&req_body)
-        .to_request();
-
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    let body: UserResponse = test::read_body_json(resp).await;
-    assert!(body.roles.contains(&UserRole::Booker.to_string()));
-}
-
-#[actix_web::test]
-async fn test_create_user_host_with_profile() {
-    dotenvy::dotenv().ok();
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let migrations_path = Path::new("../../db_core/migrations");
-    let test_db = TestPg::new(db_url, migrations_path);
-    let pool = test_db.get_pool().await;
-
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .app_data(web::Data::new(get_test_settings()))
-            .configure(configure_routes),
-    )
-    .await;
-
-    let email = format!("host_{}@example.com", Uuid::now_v7());
-    let req_body = json!({
-        "email": email,
-        "password": "password123",
-        "first_name": "Test",
-        "last_name": "Host",
-        "phone_number": "+1987654321",
-        "is_active": true,
-        "roles": ["host"],
-        "host_profile": {
-            "verified_status": "verified",
-            "payout_details": {"account": "123"},
-            "description": "Super host"
-        }
-    });
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
-        .set_json(&req_body)
-        .to_request();
-
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    let body: UserResponse = test::read_body_json(resp).await;
-    assert!(body.roles.contains(&UserRole::Host.to_string()));
-}
-
-#[actix_web::test]
-async fn test_create_user_admin() {
-    dotenvy::dotenv().ok();
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let migrations_path = Path::new("../../db_core/migrations");
-    let test_db = TestPg::new(db_url, migrations_path);
-    let pool = test_db.get_pool().await;
-
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .app_data(web::Data::new(get_test_settings()))
-            .configure(configure_routes),
-    )
-    .await;
-
-    let email = format!("admin_{}@example.com", Uuid::now_v7());
-    let req_body = json!({
-        "email": email,
-        "password": "password123",
-        "first_name": "Test",
-        "last_name": "Admin",
-        "phone_number": "+1122334455",
-        "is_active": true,
-        "roles": ["admin"],
-        "attributes": {"access_level": "super"} // Admin profile attribute as requested
-    });
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
-        .set_json(&req_body)
-        .to_request();
-
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    let body: UserResponse = test::read_body_json(resp).await;
-    assert!(body.roles.contains(&UserRole::Admin.to_string()));
-    assert_eq!(body.attributes["access_level"], "super");
-}
-
-#[actix_web::test]
-async fn test_create_user_mixed_roles() {
-    dotenvy::dotenv().ok();
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let migrations_path = Path::new("../../db_core/migrations");
-    let test_db = TestPg::new(db_url, migrations_path);
-    let pool = test_db.get_pool().await;
-
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .app_data(web::Data::new(get_test_settings()))
-            .configure(configure_routes),
-    )
-    .await;
-
-    let email = format!("mixed_{}@example.com", Uuid::now_v7());
-    let req_body = json!({
-        "email": email,
-        "password": "password123",
-        "first_name": "Test",
-        "last_name": "Mixed",
-        "phone_number": "+1555666777",
-        "is_active": true,
-        "roles": ["booker", "host"],
-        "booker_profile": {
-            "loyalty": {"points": 50}
-        },
-        "host_profile": {
-            "verified_status": "pending"
-        }
-    });
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
-        .set_json(&req_body)
-        .to_request();
-
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    let body: UserResponse = test::read_body_json(resp).await;
-    assert!(body.roles.contains(&UserRole::Booker.to_string()));
-    assert!(body.roles.contains(&UserRole::Host.to_string()));
+    }
 }
 
 #[actix_web::test]
@@ -256,7 +222,7 @@ async fn test_update_user_add_role_and_profile() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&create_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -317,7 +283,7 @@ async fn test_update_admin_user_password_and_protection() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&create_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -392,80 +358,6 @@ async fn test_update_admin_user_password_and_protection() {
 }
 
 #[actix_web::test]
-async fn test_create_user_booker_missing_profile() {
-    dotenvy::dotenv().ok();
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let migrations_path = Path::new("../../db_core/migrations");
-    let test_db = TestPg::new(db_url, migrations_path);
-    let pool = test_db.get_pool().await;
-
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .app_data(web::Data::new(get_test_settings()))
-            .configure(configure_routes),
-    )
-    .await;
-
-    let email = format!("fail_booker_{}@example.com", Uuid::now_v7());
-    let req_body = json!({
-        "email": email,
-        "password": "password123",
-        "first_name": "Fail",
-        "last_name": "Booker",
-        "phone_number": "+1234567890",
-        "is_active": true,
-        "roles": ["booker"]
-        // Missing booker_profile
-    });
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
-        .set_json(&req_body)
-        .to_request();
-
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 400); // Expect Bad Request
-}
-
-#[actix_web::test]
-async fn test_create_user_host_missing_profile() {
-    dotenvy::dotenv().ok();
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let migrations_path = Path::new("../../db_core/migrations");
-    let test_db = TestPg::new(db_url, migrations_path);
-    let pool = test_db.get_pool().await;
-
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(pool.clone()))
-            .app_data(web::Data::new(get_test_settings()))
-            .configure(configure_routes),
-    )
-    .await;
-
-    let email = format!("fail_host_{}@example.com", Uuid::now_v7());
-    let req_body = json!({
-        "email": email,
-        "password": "password123",
-        "first_name": "Fail",
-        "last_name": "Host",
-        "phone_number": "+1234567890",
-        "is_active": true,
-        "roles": ["host"]
-        // Missing host_profile
-    });
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
-        .set_json(&req_body)
-        .to_request();
-
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 400); // Expect Bad Request
-}
-
-#[actix_web::test]
 async fn test_get_all_users_with_filters() {
     dotenvy::dotenv().ok();
     let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -502,18 +394,14 @@ async fn test_get_all_users_with_filters() {
             }
         });
         let req = test::TestRequest::post()
-            .uri("/api/v1/users/")
+            .uri("/api/v1/users")
             .set_json(&req_body)
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 201);
     }
 
-    // 1. Test get all (pagination default) - test BOTH trailing slash and without trailing slash
-    let req_with_slash = test::TestRequest::get().uri("/api/v1/users/").to_request();
-    let resp_with_slash = test::call_service(&app, req_with_slash).await;
-    assert_eq!(resp_with_slash.status(), 200);
-
+    // 1. Test get all (pagination default)
     let req_without_slash = test::TestRequest::get().uri("/api/v1/users").to_request();
     let resp_without_slash = test::call_service(&app, req_without_slash).await;
     assert_eq!(resp_without_slash.status(), 200);
@@ -553,7 +441,7 @@ async fn test_get_all_users_with_filters() {
 
     // 2. Test search filter (email)
     let req = test::TestRequest::get()
-        .uri("/api/v1/users/?search=alice")
+        .uri("/api/v1/users?search=alice")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -563,7 +451,7 @@ async fn test_get_all_users_with_filters() {
 
     // 3. Test search filter (first name) - partial match
     let req = test::TestRequest::get()
-        .uri("/api/v1/users/?search=Bo")
+        .uri("/api/v1/users?search=Bo")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -573,7 +461,7 @@ async fn test_get_all_users_with_filters() {
 
     // 4. Test search filter (last name) - partial match
     let req = test::TestRequest::get()
-        .uri("/api/v1/users/?search=Chocol")
+        .uri("/api/v1/users?search=Chocol")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -610,7 +498,7 @@ async fn test_resend_verification_success() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -684,7 +572,7 @@ async fn test_resend_verification_already_verified() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -739,7 +627,7 @@ async fn test_verify_user_lowercase_and_whitespace() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -787,7 +675,7 @@ async fn test_soft_restore_hard_delete_user() {
     });
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/users/")
+        .uri("/api/v1/users")
         .set_json(&req_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -863,7 +751,7 @@ mod currency_inactive_tests {
         let resp = test::call_service(
             &app,
             test::TestRequest::post()
-                .uri("/api/v1/users/")
+                .uri("/api/v1/users")
                 .set_json(registration("CAD"))
                 .to_request(),
         )
@@ -886,7 +774,7 @@ mod currency_inactive_tests {
         let resp = test::call_service(
             &app,
             test::TestRequest::post()
-                .uri("/api/v1/users/")
+                .uri("/api/v1/users")
                 .set_json(registration("USD"))
                 .to_request(),
         )
@@ -947,7 +835,7 @@ async fn user_listings_drop_coordinates() {
     let created: UserResponse = test::call_and_read_body_json(
         &app,
         test::TestRequest::post()
-            .uri("/api/v1/users/")
+            .uri("/api/v1/users")
             .set_json(json!({
                 "email": email,
                 "password": "password123",

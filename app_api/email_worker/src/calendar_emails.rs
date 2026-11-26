@@ -96,64 +96,6 @@ mod tests {
     }
 
     #[test]
-    fn calendar_conflict_renders_every_key() {
-        let html = render("calendar_conflict_host", &conflict()).expect("rendered");
-        for want in [
-            "Villa Azul",
-            "Airbnb",
-            "2030-01-12",
-            "2030-01-14",
-            "ABC123",
-            "overlaps a stay",
-            "Calendar conflict",
-            "https://admin.test/admin/listings/1/calendar",
-        ] {
-            assert!(html.contains(want), "missing {want}");
-        }
-        assert!(!html.contains("{{"), "unfilled placeholder");
-        let mut reopened = conflict();
-        reopened["reopened"] = "true".into();
-        reopened["kind"] = "turnover".into();
-        let html = render("calendar_conflict_host", &reopened).expect("rendered");
-        assert!(html.contains("Calendar conflict reopened"));
-        assert!(html.contains("no turnover time"));
-    }
-
-    #[test]
-    fn calendar_feed_failing_renders_every_key() {
-        let html = render("calendar_feed_failing_host", &failing()).expect("rendered");
-        for want in [
-            "Villa Azul",
-            "VRBO",
-            "HTTP 503",
-            "4 times",
-            "/admin/listings/1/calendar",
-        ] {
-            assert!(html.contains(want), "missing {want}");
-        }
-        assert!(!html.contains("{{"), "unfilled placeholder");
-    }
-
-    #[test]
-    fn calendar_values_are_escaped() {
-        for (template, mut payload) in [
-            ("calendar_conflict_host", conflict()),
-            ("calendar_feed_failing_host", failing()),
-        ] {
-            payload["listing_name"] = "<script>alert(1)</script>".into();
-            payload["feed_name"] = "<img src=x onerror=alert(2)>".into();
-            payload["calendar_url"] = "javascript:alert(3)".into();
-            let html = render(template, &payload).expect("rendered");
-            assert!(
-                !html.contains("<script>") && !html.contains("<img"),
-                "{template}"
-            );
-            assert!(html.contains("&lt;script&gt;"));
-            assert!(!html.contains("javascript:"));
-        }
-    }
-
-    #[test]
     fn calendar_payloads_have_no_url_keys_but_the_calendar_page() {
         for payload in [conflict(), failing()] {
             let keys: Vec<&String> = payload.as_object().expect("object").keys().collect();

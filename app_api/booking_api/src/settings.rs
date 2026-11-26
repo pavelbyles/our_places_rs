@@ -101,116 +101,90 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tax_settings_missing_trn_fails() {
-        let err = TaxSettings::from_lookup(|_| None).unwrap_err();
-        assert!(err.contains("TAJ_SUPPLIER_TRN is required"));
-    }
+    fn test_tax_settings_validation() {
+        let missing_or_empty: &[(&str, &[(&str, &str)], &str)] = &[
+            ("missing trn", &[], "TAJ_SUPPLIER_TRN is required"),
+            (
+                "empty trn",
+                &[("TAJ_SUPPLIER_TRN", "   ")],
+                "TAJ_SUPPLIER_TRN cannot be empty",
+            ),
+            (
+                "missing name",
+                &[("TAJ_SUPPLIER_TRN", "123-456-789")],
+                "TAJ_SUPPLIER_NAME is required",
+            ),
+            (
+                "empty name",
+                &[
+                    ("TAJ_SUPPLIER_TRN", "123-456-789"),
+                    ("TAJ_SUPPLIER_NAME", "   "),
+                ],
+                "TAJ_SUPPLIER_NAME cannot be empty",
+            ),
+            (
+                "missing address",
+                &[
+                    ("TAJ_SUPPLIER_TRN", "123-456-789"),
+                    ("TAJ_SUPPLIER_NAME", "Our Places Jamaica Limited"),
+                ],
+                "TAJ_SUPPLIER_ADDRESS is required",
+            ),
+            (
+                "empty address",
+                &[
+                    ("TAJ_SUPPLIER_TRN", "123-456-789"),
+                    ("TAJ_SUPPLIER_NAME", "Our Places Jamaica Limited"),
+                    ("TAJ_SUPPLIER_ADDRESS", "   "),
+                ],
+                "TAJ_SUPPLIER_ADDRESS cannot be empty",
+            ),
+        ];
 
-    #[test]
-    fn test_tax_settings_empty_trn_fails() {
-        let err = TaxSettings::from_lookup(|k| {
-            if k == "TAJ_SUPPLIER_TRN" {
-                Some("   ".to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_err();
-        assert!(err.contains("TAJ_SUPPLIER_TRN cannot be empty"));
-    }
+        for (label, vars, expected_err) in missing_or_empty {
+            let err = TaxSettings::from_lookup(|k| {
+                vars.iter()
+                    .find(|(vk, _)| *vk == k)
+                    .map(|(_, v)| (*v).to_string())
+            })
+            .unwrap_err();
+            assert!(err.contains(expected_err), "{label}: got {err}");
+        }
 
-    #[test]
-    fn test_tax_settings_missing_name_fails() {
-        let err = TaxSettings::from_lookup(|k| {
-            if k == "TAJ_SUPPLIER_TRN" {
-                Some("123-456-789".to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_err();
-        assert!(err.contains("TAJ_SUPPLIER_NAME is required"));
-    }
-
-    #[test]
-    fn test_tax_settings_empty_name_fails() {
-        let err = TaxSettings::from_lookup(|k| match k {
-            "TAJ_SUPPLIER_TRN" => Some("123-456-789".to_string()),
-            "TAJ_SUPPLIER_NAME" => Some("   ".to_string()),
-            _ => None,
-        })
-        .unwrap_err();
-        assert!(err.contains("TAJ_SUPPLIER_NAME cannot be empty"));
-    }
-
-    #[test]
-    fn test_tax_settings_missing_address_fails() {
-        let err = TaxSettings::from_lookup(|k| match k {
-            "TAJ_SUPPLIER_TRN" => Some("123-456-789".to_string()),
-            "TAJ_SUPPLIER_NAME" => Some("Our Places Jamaica Limited".to_string()),
-            _ => None,
-        })
-        .unwrap_err();
-        assert!(err.contains("TAJ_SUPPLIER_ADDRESS is required"));
-    }
-
-    #[test]
-    fn test_tax_settings_empty_address_fails() {
-        let err = TaxSettings::from_lookup(|k| match k {
-            "TAJ_SUPPLIER_TRN" => Some("123-456-789".to_string()),
-            "TAJ_SUPPLIER_NAME" => Some("Our Places Jamaica Limited".to_string()),
-            "TAJ_SUPPLIER_ADDRESS" => Some("   ".to_string()),
-            _ => None,
-        })
-        .unwrap_err();
-        assert!(err.contains("TAJ_SUPPLIER_ADDRESS cannot be empty"));
-    }
-
-    #[test]
-    fn test_tax_settings_valid_succeeds() {
         let settings = TaxSettings::from_lookup(|k| match k {
             "TAJ_SUPPLIER_TRN" => Some("123-456-789".to_string()),
             "TAJ_SUPPLIER_NAME" => Some("Our Places Jamaica Limited".to_string()),
             "TAJ_SUPPLIER_ADDRESS" => Some("Main Street, Ocho Rios, Jamaica".to_string()),
             _ => None,
         })
-        .unwrap();
+        .expect("valid tax settings");
         assert_eq!(settings.taj_supplier_trn, "123-456-789");
         assert_eq!(settings.supplier_name, "Our Places Jamaica Limited");
         assert_eq!(settings.supplier_address, "Main Street, Ocho Rios, Jamaica");
-        let supplier = settings.to_supplier_info();
-        assert_eq!(supplier.supplier_trn, "123-456-789");
+        assert_eq!(settings.to_supplier_info().supplier_trn, "123-456-789");
     }
 
     #[test]
-    fn test_cron_settings_missing_secret_fails() {
-        let err = CronSettings::from_lookup(|_| None).unwrap_err();
-        assert!(err.contains("CRON_SECRET is required"));
-    }
+    fn test_cron_settings_validation() {
+        for (label, val, expected_err) in [
+            ("missing", None, "CRON_SECRET is required"),
+            ("empty", Some("   "), "CRON_SECRET cannot be empty"),
+        ] {
+            let err = CronSettings::from_lookup(|k| {
+                if k == "CRON_SECRET" {
+                    val.map(str::to_string)
+                } else {
+                    None
+                }
+            })
+            .unwrap_err();
+            assert!(err.contains(expected_err), "{label}: got {err}");
+        }
 
-    #[test]
-    fn test_cron_settings_empty_secret_fails() {
-        let err = CronSettings::from_lookup(|k| {
-            if k == "CRON_SECRET" {
-                Some("   ".to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_err();
-        assert!(err.contains("CRON_SECRET cannot be empty"));
-    }
-
-    #[test]
-    fn test_cron_settings_valid_succeeds() {
         let settings = CronSettings::from_lookup(|k| {
-            if k == "CRON_SECRET" {
-                Some("super-secret-cron-token".to_string())
-            } else {
-                None
-            }
+            (k == "CRON_SECRET").then(|| "super-secret-cron-token".to_string())
         })
-        .unwrap();
+        .expect("valid cron settings");
         assert_eq!(settings.cron_secret, "super-secret-cron-token");
     }
 }

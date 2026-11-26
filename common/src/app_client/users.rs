@@ -280,29 +280,6 @@ pub async fn delete_session(token_hash: &str) -> Result<()> {
     Ok(())
 }
 
-/// Ends a user's sessions, optionally only in one portal.
-pub async fn revoke_user_sessions(user_id: Uuid, namespace: Option<&str>) -> Result<()> {
-    let api_url = user_api_url();
-    let audience = user_api_audience();
-    let mut url = format!("{}/api/v1/users/{}/sessions", api_url, user_id);
-    if let Some(ns) = namespace {
-        url.push_str(&format!("?namespace={}", ns));
-    }
-
-    let res = get_client()
-        .delete(&url, &audience)
-        .await
-        .context("Failed to connect to user service for user session revocation")?;
-
-    if !res.status().is_success() && res.status() != reqwest::StatusCode::NOT_FOUND {
-        let status = res.status();
-        let err_text = res.text().await.unwrap_or_default();
-        bail!("Failed to revoke user sessions ({}): {}", status, err_text);
-    }
-
-    Ok(())
-}
-
 /// Checks a user's email and password against an explicit `user_api` base URL.
 pub async fn login_user_at(
     client: &AuthenticatedClient,

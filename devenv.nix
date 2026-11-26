@@ -187,9 +187,9 @@
       echo "=== [2/5] Checking Code Formatting ==="
       cargo fmt --check
       echo "=== [3/5] Running Offline Clippy with Zero Warnings ==="
-      SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings
+      SQLX_OFFLINE=true cargo clippy --workspace --all-features --manifest-path Cargo.toml -- -D warnings
       echo "=== [4/5] Checking Offline Target Compilation ==="
-      SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests
+      SQLX_OFFLINE=true cargo check --workspace --all-features --tests
       echo "=== [5/5] Running Isolated CI Test Matrix ==="
       test-ci-matrix
       echo "✅ Sanity check passed cleanly!"
@@ -199,7 +199,7 @@
     test-ci-matrix.exec = ''
       set -e
       echo "--> Running Backend & Shared Domain Tests (mirrors test-api)..."
-      cargo test --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
+      cargo test --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin
       echo "--> Running Web UI Tests (mirrors test-web-ui)..."
       cargo test -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin
     '';

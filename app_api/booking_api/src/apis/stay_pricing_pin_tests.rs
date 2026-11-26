@@ -89,27 +89,37 @@ pub(super) async fn seed_case(pool: &PgPool, case: &serde_json::Value) -> Uuid {
 }
 
 #[tokio::test]
-async fn the_public_quote_matches_every_golden_case() {
+async fn the_public_quote_and_hold_match_every_golden_case() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(settings()))
+            .app_data(web::Data::new(tax_settings()))
+            .configure(crate::apis::configure_routes),
+    )
+    .await;
+
     for case in golden_cases() {
         let name = case["name"].as_str().expect("name");
-        let test_db = test_db();
-        let pool = test_db.get_pool().await;
+        let currency = case["currency"].as_str().expect("currency");
+        if optional_amount(&case["rate"]).is_some() {
+            sqlx::query(
+                "DELETE FROM currency_exchange_rates WHERE base_currency = 'USD' AND target_currency = $1",
+            )
+            .bind(currency)
+            .execute(&pool)
+            .await
+            .expect("clear prior rate for golden case");
+        }
         let villa = seed_case(&pool, &case).await;
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(pool.clone()))
-                .app_data(web::Data::new(settings()))
-                .app_data(web::Data::new(tax_settings()))
-                .configure(crate::apis::configure_routes),
-        )
-        .await;
 
         let uri = format!(
-            "/api/v1/bookings/listing/{villa}/quote?check_in={}&check_out={}&guests={}&currency={}",
+            "/api/v1/bookings/listing/{villa}/quote?check_in={}&check_out={}&guests={}&currency={currency}",
             case["check_in"].as_str().expect("check_in"),
             case["check_out"].as_str().expect("check_out"),
             case["guests"],
-            case["currency"].as_str().expect("currency"),
         );
         let resp = test::call_service(
             &app,
@@ -119,7 +129,7 @@ async fn the_public_quote_matches_every_golden_case() {
                 .to_request(),
         )
         .await;
-        assert_eq!(resp.status(), 200, "{name}");
+        assert_eq!(resp.status(), 200, "{name}: quote");
         let quote: serde_json::Value = test::read_body_json(resp).await;
 
         let expected = &case["expected"];
@@ -139,5 +149,47 @@ async fn the_public_quote_matches_every_golden_case() {
                 "{name}: {field}"
             );
         }
+
+        let guest = user(&pool, UserRole::Booker).await;
+        let hold_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/bookings")
+                .insert_header(("Accept", "application/json"))
+                .insert_header((
+                    "Authorization",
+                    format!("Bearer {}", api_core::auth::generate_test_jwt(guest)),
+                ))
+                .set_json(serde_json::json!({
+                    "guest_id": guest,
+                    "listing_id": villa,
+                    "check_in": case["check_in"],
+                    "check_out": case["check_out"],
+                    "num_adults": case["guests"],
+                    "num_children": 0,
+                    "num_infants": 0,
+                    "num_pets": 0,
+                    "is_business_trip": false,
+                    "currency": currency,
+                    "agreed_cancellation_policy": "Flexible",
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(hold_resp.status(), 201, "{name}: hold");
+
+        let id: Uuid = sqlx::query_scalar("SELECT id FROM booking WHERE guest_id = $1")
+            .bind(guest)
+            .fetch_one(&pool)
+            .await
+            .expect("the hold");
+        let booking = db_core::booking::get_booking_by_id(&pool, id)
+            .await
+            .expect("read the hold");
+        assert_eq!(
+            booking.total_price,
+            amount(&expected["total"]),
+            "{name}: hold total"
+        );
     }
 }

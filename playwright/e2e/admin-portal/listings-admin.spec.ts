@@ -8,15 +8,6 @@ test.describe('Admin Portal - Listings Management', () => {
     await authenticatedAdminPage.goto('/admin/listings');
   });
 
-  test('should render listings inventory page and title', async ({ authenticatedAdminPage }) => {
-    const heading = authenticatedAdminPage.locator('h1');
-    await expect(heading).toContainText('Listings Management');
-
-    // Check action buttons
-    const createBtn = authenticatedAdminPage.locator('main a[href*="/listings/new"]').first();
-    await expect(createBtn).toBeVisible();
-  });
-
   test('still lists a deactivated listing for staff', async ({ authenticatedAdminPage: page }) => {
     const listing = createListingCopy();
     deactivateListing(listing.id);

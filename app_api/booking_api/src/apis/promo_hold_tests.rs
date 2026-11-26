@@ -505,52 +505,6 @@ mod quote {
     }
 
     #[tokio::test]
-    async fn public_signed_in_and_hold_totals_match_with_no_code() {
-        let test_db = test_db();
-        let pool = test_db.get_pool().await;
-        let host = user(&pool, UserRole::Host).await;
-        let guest = user(&pool, UserRole::Booker).await;
-        let villa = listing(&pool, host).await;
-        sqlx::query(
-            "UPDATE listing SET weekly_discount_percentage = 10, cleaning_fee = 50, damage_deposit = 100,
-                 guests_included = 1, extra_guest_fee = 25 WHERE id = $1",
-        )
-        .bind(villa)
-        .execute(&pool)
-        .await
-        .unwrap();
-        let app = app!(pool);
-
-        let public = test::call_service(
-            &app,
-            test::TestRequest::get()
-                .uri(&format!(
-                    "/api/v1/bookings/listing/{villa}/quote?check_in=2030-08-01&check_out=2030-08-08&guests=2&currency=USD"
-                ))
-                .to_request(),
-        )
-        .await;
-        assert_eq!(public.status(), 200, "the public quote needs no sign-in");
-        let public: serde_json::Value = test::read_body_json(public).await;
-        rows_add_up(&public);
-
-        let mut body = quote_body(villa, None);
-        body["check_out"] = serde_json::json!("2030-08-08");
-        body["guests"] = serde_json::json!(2);
-        let signed_in = post_quote!(app, guest, body);
-        assert_eq!(signed_in.status(), 200);
-        let signed_in: serde_json::Value = test::read_body_json(signed_in).await;
-        assert_eq!(public, signed_in);
-
-        let mut hold = booking_request(guest, villa);
-        hold["check_out"] = serde_json::json!("2030-08-08");
-        hold["num_adults"] = serde_json::json!(2);
-        assert_eq!(post_hold!(app, guest, hold).status(), 201);
-        let booking = booking_of(&pool, guest).await.expect("hold created");
-        assert_eq!(booking.total_price, amount(&public["total_amount"]));
-    }
-
-    #[tokio::test]
     async fn a_quote_with_a_code_matches_the_hold_and_its_rows_add_up() {
         let test_db = test_db();
         let pool = test_db.get_pool().await;

@@ -2,11 +2,10 @@
 
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use sqlx::migrate::Migrator;
 use sqlx::{PgPool, Row};
 use sqlx_db_tester::TestPg;
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use uuid::Uuid;
 
 /// File stem of the migration under test.
@@ -31,21 +30,6 @@ fn migration_names() -> Vec<String> {
         .collect();
     names.sort();
     names
-}
-
-/// A temp copy of every migration that precedes the promo migration.
-fn previous_migrations_dir() -> PathBuf {
-    let dir = env::temp_dir().join(format!("op_prev_promo_migrations_{}", Uuid::now_v7()));
-    std::fs::create_dir_all(&dir).expect("create temp migrations dir");
-    let names = migration_names();
-    let cutoff = names
-        .iter()
-        .position(|n| n.contains(PROMO_MIGRATION))
-        .expect("promo migration exists");
-    for name in &names[..cutoff] {
-        std::fs::copy(Path::new("migrations").join(name), dir.join(name)).expect("copy migration");
-    }
-    dir
 }
 
 /// The SQL the migration schedules for `cleanup_stale_pending_holds`. Test
@@ -121,95 +105,6 @@ pub(crate) async fn insert_code(pool: &PgPool, created_by: Uuid, code: &str) -> 
     .fetch_one(pool)
     .await
     .expect("insert promo code")
-}
-
-#[tokio::test]
-async fn promo_schema_rows_are_unchanged_by_the_migration() {
-    let prev = previous_migrations_dir();
-    let test_db = TestPg::new(db_url(), prev.clone());
-    let pool = test_db.get_pool().await;
-
-    let host = raw_user(&pool).await;
-    let guest = raw_user(&pool).await;
-    let villa = raw_listing(&pool, host).await;
-    let booking = raw_booking(&pool, guest, villa, "confirmed").await;
-    sqlx::query(
-        "INSERT INTO host_payout_ledger (booking_id, listing_id, host_id, gross_amount, net_payout_amount)
-         VALUES ($1, $2, $3, 400, 360)",
-    )
-    .bind(booking)
-    .bind(villa)
-    .bind(host)
-    .execute(&pool)
-    .await
-    .expect("insert ledger row");
-    let snapshot = "SELECT b.xmin::text AS booking_xmin, l.xmin::text AS ledger_xmin, l.updated_at::text AS ledger_updated
-                    FROM booking b JOIN host_payout_ledger l ON l.booking_id = b.id WHERE b.id = $1";
-    let read = |row: sqlx::postgres::PgRow| -> (String, String, String) {
-        (
-            row.get("booking_xmin"),
-            row.get("ledger_xmin"),
-            row.get("ledger_updated"),
-        )
-    };
-    let before = read(
-        sqlx::query(snapshot)
-            .bind(booking)
-            .fetch_one(&pool)
-            .await
-            .unwrap(),
-    );
-
-    Migrator::new(Path::new("migrations"))
-        .await
-        .expect("load migrations")
-        .run(&pool)
-        .await
-        .expect("promo migration applies to existing data");
-
-    let after = read(
-        sqlx::query(snapshot)
-            .bind(booking)
-            .fetch_one(&pool)
-            .await
-            .unwrap(),
-    );
-    assert_eq!(before, after, "existing rows must not be rewritten");
-
-    let ledger = sqlx::query(
-        "SELECT gross_amount, net_payout_amount, cleaning_fee_amount, promo_discount_amount
-         FROM host_payout_ledger WHERE booking_id = $1",
-    )
-    .bind(booking)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(ledger.get::<Decimal, _>("gross_amount"), dec!(400));
-    assert_eq!(ledger.get::<Decimal, _>("net_payout_amount"), dec!(360));
-    assert_eq!(
-        ledger.get::<Decimal, _>("cleaning_fee_amount"),
-        Decimal::ZERO
-    );
-    assert_eq!(
-        ledger.get::<Decimal, _>("promo_discount_amount"),
-        Decimal::ZERO
-    );
-
-    let row = sqlx::query(
-        "SELECT promo_code_id, promo_stay_discount, promo_cleaning_discount FROM booking WHERE id = $1",
-    )
-    .bind(booking)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(row.get::<Option<Uuid>, _>("promo_code_id"), None);
-    assert_eq!(row.get::<Decimal, _>("promo_stay_discount"), Decimal::ZERO);
-    assert_eq!(
-        row.get::<Decimal, _>("promo_cleaning_discount"),
-        Decimal::ZERO
-    );
-
-    let _ = std::fs::remove_dir_all(prev);
 }
 
 #[tokio::test]

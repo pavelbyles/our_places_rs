@@ -1,4 +1,4 @@
-//! Server-side portal sessions: create, read, delete, revoke.
+//! Server-side portal sessions: create, read, delete.
 
 use super::SessionNamespaceQuery;
 use actix_web::{HttpRequest, Responder, web};
@@ -7,7 +7,6 @@ use api_core::response::{Payload, respond};
 use chrono::Utc;
 use common::models::{CreateSessionRequest, SessionResponse};
 use sqlx::PgPool;
-use uuid::Uuid;
 
 #[tracing::instrument(skip_all)]
 #[utoipa::path(
@@ -146,35 +145,6 @@ pub(super) async fn delete_session_handler(
     let sessions_db = db_core::sessions::SessionsDb::new(pool.get_ref().clone());
     sessions_db
         .delete(&token_hash)
-        .await
-        .map_err(|_| ApiError::Internal)?;
-    Ok(actix_web::HttpResponse::NoContent().finish())
-}
-
-#[tracing::instrument]
-#[utoipa::path(
-    delete,
-    path = "/api/v1/users/{user_id}/sessions",
-    tag = "sessions",
-    params(
-        ("user_id" = Uuid, Path, description = "User UUID"),
-        SessionNamespaceQuery
-    ),
-    responses(
-        (status = 204, description = "User sessions revoked"),
-        (status = 500, description = "Internal server error")
-    )
-)]
-pub(super) async fn revoke_user_sessions_handler(
-    pool: web::Data<PgPool>,
-    path: web::Path<Uuid>,
-    query: web::Query<SessionNamespaceQuery>,
-) -> Result<actix_web::HttpResponse, ApiError> {
-    let user_id = path.into_inner();
-    let sessions_db = db_core::sessions::SessionsDb::new(pool.get_ref().clone());
-    let ns = query.namespace.as_deref();
-    sessions_db
-        .delete_user_sessions(user_id, ns)
         .await
         .map_err(|_| ApiError::Internal)?;
     Ok(actix_web::HttpResponse::NoContent().finish())

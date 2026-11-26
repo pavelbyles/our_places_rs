@@ -354,32 +354,6 @@ paths:
         "500":
           description: Internal server error
 
-  /api/v1/users/{user_id}/sessions:
-    delete:
-      summary: Revoke all active sessions for a user
-      operationId: revokeUserSessions
-      tags:
-        - users
-        - sessions
-      x-google-backend: user-backend
-      parameters:
-        - in: path
-          name: user_id
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - in: query
-          name: namespace
-          schema:
-            type: string
-      responses:
-        "204":
-          description: User sessions revoked
-        "500":
-          description: Internal server error
-
-
 
   # ----------------------------------------------------------------------------
   # LISTING API

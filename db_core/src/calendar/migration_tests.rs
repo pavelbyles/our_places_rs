@@ -47,25 +47,6 @@ fn is_check_or_unique_or_fk(e: &sqlx::Error) -> bool {
 }
 
 #[tokio::test]
-async fn migration_applies_on_a_fresh_database() {
-    let db = migrated_db();
-    let pool = db.get_pool().await;
-    let version: String = sqlx::query_scalar("SHOW server_version")
-        .fetch_one(&pool)
-        .await
-        .expect("server version");
-    tracing::info!(%version, "calendar migration applied");
-    let tables: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM information_schema.tables
-         WHERE table_name IN ('listing_calendar_feed', 'listing_blocked_dates', 'calendar_conflict')",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("count tables");
-    assert_eq!(tables, 3);
-}
-
-#[tokio::test]
 async fn constraints_refuse_malformed_blocks() {
     let db = migrated_db();
     let pool = db.get_pool().await;

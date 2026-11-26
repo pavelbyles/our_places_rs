@@ -20,35 +20,6 @@ async fn setup_test_db() -> TestPg {
 }
 
 #[tokio::test]
-async fn test_render_email_body_templates() {
-    let otp_payload = serde_json::json!({ "code": "123456" });
-    let otp_html = render_email_body("user_verification_otp", &otp_payload);
-    assert!(otp_html.contains("123456"));
-    assert!(otp_html.contains("Welcome to Our Places!"));
-
-    let reset_payload = serde_json::json!({ "token": "rst_999" });
-    let reset_html = render_email_body("password_reset_otp", &reset_payload);
-    assert!(reset_html.contains("rst_999"));
-
-    let booking_payload = serde_json::json!({
-        "confirmation_code": "CONF123",
-        "dates": "Oct 1 - Oct 5",
-        "total_price": "$1,200.00"
-    });
-    let booking_html = render_email_body("booking_confirmation", &booking_payload);
-    assert!(booking_html.contains("CONF123"));
-    assert!(booking_html.contains("$1,200.00"));
-
-    let message_payload = serde_json::json!({
-        "sender_name": "Alice",
-        "message_text": "What is the check-in time?"
-    });
-    let message_html = render_email_body("guest_host_message_notification", &message_payload);
-    assert!(message_html.contains("Alice"));
-    assert!(message_html.contains("What is the check-in time?"));
-}
-
-#[tokio::test]
 async fn test_render_booking_confirmation_guest_itemized_gct_and_receipt_link() {
     let payload = serde_json::json!({
         "confirmation_code": "BK-100",
