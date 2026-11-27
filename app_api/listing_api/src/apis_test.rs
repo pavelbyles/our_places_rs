@@ -1553,12 +1553,13 @@ mod gap_limit_tests {
     }
 
     #[actix_web::test]
-    async fn update_listing_slug_validates_and_returns_409_on_conflict() {
+    async fn update_listing_slug_validates_and_returns_409_on_conflict()
+    -> Result<(), Box<dyn std::error::Error>> {
         dotenvy::dotenv().ok();
-        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
+        let db_url = env::var(DATABASE_URL_ENV)?;
         let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
         let pool = test_db.get_pool().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = pool.acquire().await?;
         let user_id = create_test_user(&mut conn).await;
         drop(conn);
         let app = test::init_service(
@@ -1676,6 +1677,7 @@ mod gap_limit_tests {
         assert_eq!(conflict_resp.status(), 409);
         let body: serde_json::Value = test::read_body_json(conflict_resp).await;
         assert_eq!(body["code"], "LISTING_SLUG_EXISTS");
+        Ok(())
     }
 }
 

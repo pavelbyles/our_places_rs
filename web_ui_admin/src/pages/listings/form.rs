@@ -1427,7 +1427,8 @@ mod pin_picker_tests {
     }
 
     #[tokio::test]
-    async fn slug_input_renders_only_when_editing() {
+    async fn slug_input_renders_only_when_editing()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let cx = &maps_on();
         let create_view = view! {
             listing_form(
@@ -1439,10 +1440,11 @@ mod pin_picker_tests {
                 errors: Vec::new()
             )
         };
-        let create_html = match create_view.first().await {
-            Ok(handle) => handle.render(cx),
-            Err(e) => panic!("create render failed: {e}"),
-        };
+        let create_html = create_view
+            .first()
+            .await
+            .map_err(|e| format!("create render failed: {e}"))?
+            .render(cx);
         assert!(!create_html.contains("id=\"listing-slug\""));
 
         let mut fields = ListingFields::blank(Uuid::nil());
@@ -1458,13 +1460,15 @@ mod pin_picker_tests {
                 slug_error: Some("That listing URL is already in use.".into())
             )
         };
-        let edit_html = match edit_view.first().await {
-            Ok(handle) => handle.render(cx),
-            Err(e) => panic!("edit render failed: {e}"),
-        };
+        let edit_html = edit_view
+            .first()
+            .await
+            .map_err(|e| format!("edit render failed: {e}"))?
+            .render(cx);
         assert!(edit_html.contains("id=\"listing-slug\""));
         assert!(edit_html.contains("id=\"listing-slug-suggestion\""));
         assert!(edit_html.contains("id=\"listing-slug-error\""));
         assert!(edit_html.contains("hx-get=\"/admin/listings/slug-suggestion\""));
+        Ok(())
     }
 }

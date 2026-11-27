@@ -1556,21 +1556,21 @@ mod batched_override_tests {
     }
 
     #[tokio::test]
-    async fn slug_update_conflict_rollback_reuse_and_legacy_noop() {
+    async fn slug_update_conflict_rollback_reuse_and_legacy_noop()
+    -> Result<(), Box<dyn std::error::Error>> {
         use crate::error::DbError;
         use crate::listing::{
             delete_listing, get_listing_by_id, get_listing_by_id_or_slug, update_listing,
         };
 
+        static DATABASE_URL_ENV: &str = "DATABASE_URL";
+        dotenvy::dotenv().ok();
         let test_db = sqlx_db_tester::TestPg::new(
-            {
-                dotenvy::dotenv().ok();
-                env::var("DATABASE_URL").expect("DATABASE_URL must be set")
-            },
+            env::var(DATABASE_URL_ENV)?,
             std::path::Path::new("migrations"),
         );
         let pool = test_db.get_pool().await;
-        let mut conn = pool.acquire().await.unwrap();
+        let mut conn = pool.acquire().await?;
         let host = create_test_user_with_host_profile(&mut conn).await;
         drop(conn);
 
@@ -1609,14 +1609,12 @@ mod batched_override_tests {
             &pool,
             &make(&format!("Coral Cove {}", Uuid::now_v7().simple())),
         )
-        .await
-        .unwrap();
+        .await?;
         let b = create_listing(
             &pool,
             &make(&format!("Palm Bay {}", Uuid::now_v7().simple())),
         )
-        .await
-        .unwrap();
+        .await?;
         let old_a_slug = a.slug.clone();
         let new_a_slug = format!("coral-cove-{}", &Uuid::now_v7().simple().to_string()[..8]);
 
@@ -1629,8 +1627,7 @@ mod batched_override_tests {
                 ..Default::default()
             },
         )
-        .await
-        .unwrap();
+        .await?;
         assert_eq!(updated_a.slug, new_a_slug);
         assert!(get_listing_by_id_or_slug(&pool, &old_a_slug).await.is_err());
 
@@ -1642,8 +1639,7 @@ mod batched_override_tests {
                 ..Default::default()
             },
         )
-        .await
-        .unwrap();
+        .await?;
         assert_eq!(updated_b.slug, old_a_slug);
 
         // 2. Duplicate active slug fails atomically (no partial save, no orphan history row).
@@ -1651,8 +1647,7 @@ mod batched_override_tests {
             sqlx::query_scalar("SELECT COUNT(*) FROM listing_history WHERE listing_id = $1")
                 .bind(b.id)
                 .fetch_one(&pool)
-                .await
-                .unwrap();
+                .await?;
         let conflict = update_listing(
             &pool,
             b.id,
@@ -1664,19 +1659,18 @@ mod batched_override_tests {
         )
         .await;
         assert!(matches!(conflict, Err(DbError::ListingSlugExists)));
-        let b_after = get_listing_by_id(&pool, b.id).await.unwrap();
+        let b_after = get_listing_by_id(&pool, b.id).await?;
         assert_eq!(b_after.listing.name, b.name);
         assert_eq!(b_after.listing.slug, old_a_slug);
         let history_after: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM listing_history WHERE listing_id = $1")
                 .bind(b.id)
                 .fetch_one(&pool)
-                .await
-                .unwrap();
+                .await?;
         assert_eq!(history_before, history_after);
 
         // 3. Soft-deleting A releases its slug and blocks further updates to A.
-        delete_listing(&pool, a.id, false).await.unwrap();
+        delete_listing(&pool, a.id, false).await?;
         let update_deleted = update_listing(
             &pool,
             a.id,
@@ -1699,8 +1693,7 @@ mod batched_override_tests {
                 ..Default::default()
             },
         )
-        .await
-        .unwrap();
+        .await?;
         assert_eq!(b_reused.slug, new_a_slug);
 
         // 4. Legacy short slug is not blocked on unrelated edits when unchanged or None.
@@ -1709,8 +1702,7 @@ mod batched_override_tests {
             .bind(&legacy_slug)
             .bind(b.id)
             .execute(&pool)
-            .await
-            .unwrap();
+            .await?;
         let b_legacy = update_listing(
             &pool,
             b.id,
@@ -1720,9 +1712,9 @@ mod batched_override_tests {
                 ..Default::default()
             },
         )
-        .await
-        .unwrap();
+        .await?;
         assert_eq!(b_legacy.slug, legacy_slug);
         assert_eq!(b_legacy.description.as_deref(), Some("Updated description"));
+        Ok(())
     }
 }
