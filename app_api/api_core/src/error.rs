@@ -88,7 +88,9 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::DateUnavailable) | ApiError::DateUnavailable => {
                 StatusCode::CONFLICT
             }
-            ApiError::Database(DbError::ListingUnavailable) => StatusCode::CONFLICT,
+            ApiError::Database(DbError::ListingUnavailable | DbError::ListingSlugExists) => {
+                StatusCode::CONFLICT
+            }
             ApiError::Database(DbError::BookingNotModifiable(_))
             | ApiError::BookingNotModifiable(_) => StatusCode::CONFLICT,
             ApiError::Database(DbError::ChangeRequestAlreadyPending)
@@ -236,6 +238,12 @@ impl ResponseError for ApiError {
                 HttpResponse::Conflict().json(serde_json::json!({
                     "code": "LISTING_UNAVAILABLE",
                     "message": "This listing is not available for booking."
+                }))
+            }
+            ApiError::Database(DbError::ListingSlugExists) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "LISTING_SLUG_EXISTS",
+                    "message": "That listing URL is already in use by another listing."
                 }))
             }
             ApiError::BookingNotModifiable(msg) => {
@@ -521,6 +529,11 @@ mod error_mapping_tests {
         }
 
         let cases: Vec<(ApiError, StatusCode, &str)> = vec![
+            (
+                ApiError::Database(DbError::ListingSlugExists),
+                StatusCode::CONFLICT,
+                "LISTING_SLUG_EXISTS",
+            ),
             (
                 ApiError::Database(DbError::PromoCodeExists),
                 StatusCode::CONFLICT,

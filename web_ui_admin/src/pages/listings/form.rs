@@ -43,6 +43,8 @@ pub const MAX_DESCRIPTION_CHARS: usize = 2000;
 pub struct ListingFields {
     /// Name.
     pub name: String,
+    /// Public URL slug (edit-only).
+    pub slug: String,
     /// Description.
     pub description: String,
     /// Structure (Villa, House, …).
@@ -133,6 +135,7 @@ impl ListingFields {
     pub fn from_listing(l: &ListingResponse) -> Self {
         Self {
             name: l.name.clone(),
+            slug: l.slug.clone(),
             description: l.description.clone().unwrap_or_default(),
             listing_structure: l.listing_structure.clone(),
             country: l.country.clone(),
@@ -617,6 +620,7 @@ impl ValidListing {
         );
         UpdatedListingRequest {
             name: Some(self.name),
+            slug: None,
             description: self.description,
             listing_structure: Some(self.listing_structure),
             country: Some(self.country),
@@ -670,6 +674,9 @@ pub async fn listing_form(
     /// The listing's photos, for each suite's photo picker (none when new).
     #[default]
     suite_photos: Vec<SuitePhoto>,
+    /// Inline error for the edit-only listing slug field.
+    #[default]
+    slug_error: Option<String>,
 ) -> Result<impl View> {
     let label = "block text-xs font-medium text-muted-foreground";
     let input = "mt-1 block h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
@@ -816,13 +823,27 @@ pub async fn listing_form(
                         data-required-dot=""
                         class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
                     ></span>
-                    <input
-                        id="listing-name"
-                        name="name"
-                        required=(true)
-                        value=(f.name.clone())
-                        class=(input)
-                    />
+                    if editing {
+                        <input
+                            id="listing-name"
+                            name="name"
+                            required=(true)
+                            value=(f.name.clone())
+                            hx-get="/admin/listings/slug-suggestion"
+                            hx-trigger="input changed delay:250ms"
+                            hx-target="#listing-slug-suggestion"
+                            hx-include="#listing-name, #listing-slug"
+                            class=(input)
+                        />
+                    } else {
+                        <input
+                            id="listing-name"
+                            name="name"
+                            required=(true)
+                            value=(f.name.clone())
+                            class=(input)
+                        />
+                    }
                 </label>
                 <label class=(label)>
                     "Structure"
@@ -839,6 +860,46 @@ pub async fn listing_form(
                         }
                     </select>
                 </label>
+                if editing {
+                    <div class="sm:col-span-2">
+                        <label class=(label) for="listing-slug">"Listing URL"</label>
+                        <div class="mt-1 flex items-center">
+                            <span
+                                class="inline-flex h-10 items-center rounded-l-lg border border-r-0 border-border bg-muted px-3 text-sm text-muted-foreground"
+                            >
+                                "/listings/"
+                            </span>
+                            <input
+                                id="listing-slug"
+                                name="slug"
+                                maxlength=(common::slug::MAX_SLUG_CHARS.to_string())
+                                aria-describedby="listing-slug-warning"
+                                value=(f.slug.clone())
+                                class="block h-10 w-full rounded-r-lg border border-border bg-card px-3 text-sm text-foreground"
+                            />
+                        </div>
+                        <div
+                            id="listing-slug-suggestion"
+                            aria-live="polite"
+                            class="mt-2"
+                        ></div>
+                        if let Some(err) = slug_error {
+                            <p
+                                id="listing-slug-error"
+                                role="alert"
+                                class="mt-1 text-xs text-destructive"
+                            >
+                                (err)
+                            </p>
+                        }
+                        <p
+                            id="listing-slug-warning"
+                            class="mt-1 text-xs text-muted-foreground"
+                        >
+                            "Changing the URL immediately breaks existing links and bookmarks (they will return 404)."
+                        </p>
+                    </div>
+                }
                 <div class="sm:col-span-2">
                     <label class=(label)>
                         "Description"
@@ -906,7 +967,11 @@ pub async fn listing_form(
                     map_container(
                         kind: MapKind::Picker,
                         point: picker_point(&f),
-                        label: Some("Pick the listing's location: click the map or drag the pin".to_string()),
+                        label: Some(
+                            "Pick the listing's location: click the map or drag the pin".to_string(
+
+                            ),
+                        ),
                         attrs: topcoat::view::attributes! { class="h-72" }
                     )
                 </div>
@@ -915,7 +980,9 @@ pub async fn listing_form(
                     aria-describedby="location-privacy-help"
                     class="md:col-span-2"
                 >
-                    <legend class=(label)>"Location shown to guests before booking"</legend>
+                    <legend class=(label)>
+                        "Location shown to guests before booking"
+                    </legend>
                     <div class="mt-2 flex flex-wrap gap-4 text-sm">
                         for (value, title) in [
                             ("approximate", "Approximate area (500 m)"),
@@ -933,7 +1000,10 @@ pub async fn listing_form(
                             </label>
                         }
                     </div>
-                    <p id="location-privacy-help" class="mt-1 text-xs text-muted-foreground">
+                    <p
+                        id="location-privacy-help"
+                        class="mt-1 text-xs text-muted-foreground"
+                    >
                         "Switching back to Approximate can't hide a location guests have already seen."
                     </p>
                 </fieldset>
@@ -1143,6 +1213,48 @@ pub fn api_rejection_messages(err: &dyn std::fmt::Display) -> Option<Vec<String>
     Some(messages).filter(|m| !m.is_empty())
 }
 
+/// Partitions a `listing_api` rejection into an optional inline slug error and
+/// any remaining general form errors so slug conflicts (`LISTING_SLUG_EXISTS`)
+/// and validator `"slug"` errors render directly beneath `#listing-slug`.
+pub fn split_api_rejection(err: &dyn std::fmt::Display) -> Option<(Option<String>, Vec<String>)> {
+    let text = err.to_string();
+    let body: serde_json::Value = serde_json::from_str(&text[text.find('{')?..]).ok()?;
+    let obj = body.as_object()?;
+    if obj.get("code").and_then(|v| v.as_str()) == Some("LISTING_SLUG_EXISTS") {
+        let msg = obj
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("That listing URL is already in use by another listing.")
+            .to_string();
+        return Some((Some(msg), Vec::new()));
+    }
+    if let Some(msg) = ["message", "error"]
+        .iter()
+        .find_map(|k| obj.get(*k).and_then(|v| v.as_str()))
+    {
+        return Some((None, vec![msg.to_string()]));
+    }
+    let mut slug_error: Option<String> = None;
+    let mut general = Vec::new();
+    for (field, errs) in obj {
+        for e in errs.as_array().into_iter().flatten() {
+            let msg = match e.get("message").and_then(|m| m.as_str()) {
+                Some(m) => m.to_string(),
+                None => format!(
+                    "{field}: {}",
+                    e.get("code").and_then(|c| c.as_str()).unwrap_or("invalid")
+                ),
+            };
+            if field == "slug" && slug_error.is_none() {
+                slug_error = Some(msg);
+            } else if field != "slug" {
+                general.push(msg);
+            }
+        }
+    }
+    (slug_error.is_some() || !general.is_empty()).then_some((slug_error, general))
+}
+
 #[cfg(test)]
 mod listing_booking_mode {
     use super::*;
@@ -1291,5 +1403,72 @@ mod pin_picker_tests {
             Err(e) => panic!("{e}"),
         };
         assert_eq!(picker_point(&ListingFields::from_listing(&listing)), None);
+    }
+
+    #[test]
+    fn split_api_rejection_routes_slug_conflict_and_field_errors_inline() {
+        let conflict = r#"HTTP 409: {"code":"LISTING_SLUG_EXISTS","message":"That listing URL is already in use by another listing."}"#;
+        assert_eq!(
+            split_api_rejection(&conflict),
+            Some((
+                Some("That listing URL is already in use by another listing.".into()),
+                Vec::new()
+            ))
+        );
+
+        let mixed = r#"HTTP 400: {"slug":[{"code":"invalid_listing_slug","message":"Listing URL must be at least 3 characters."}],"name":[{"code":"length","message":"Name cannot be empty"}]}"#;
+        assert_eq!(
+            split_api_rejection(&mixed),
+            Some((
+                Some("Listing URL must be at least 3 characters.".into()),
+                vec!["Name cannot be empty".into()]
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn slug_input_renders_only_when_editing()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let cx = &maps_on();
+        let create_view = view! {
+            listing_form(
+                action: "/admin/listings".into(),
+                submit_label: "Create".into(),
+                fields: ListingFields::blank(Uuid::nil()),
+                owners: Vec::new(),
+                can_set_commission: false,
+                errors: Vec::new()
+            )
+        };
+        let create_html = create_view
+            .first()
+            .await
+            .map_err(|e| format!("create render failed: {e}"))?
+            .render(cx);
+        assert!(!create_html.contains("id=\"listing-slug\""));
+
+        let mut fields = ListingFields::blank(Uuid::nil());
+        fields.slug = "coral-cove".into();
+        let edit_view = view! {
+            listing_form(
+                action: "/admin/listings/123/edit".into(),
+                submit_label: "Save changes".into(),
+                fields: fields,
+                owners: Vec::new(),
+                can_set_commission: false,
+                errors: Vec::new(),
+                slug_error: Some("That listing URL is already in use.".into())
+            )
+        };
+        let edit_html = edit_view
+            .first()
+            .await
+            .map_err(|e| format!("edit render failed: {e}"))?
+            .render(cx);
+        assert!(edit_html.contains("id=\"listing-slug\""));
+        assert!(edit_html.contains("id=\"listing-slug-suggestion\""));
+        assert!(edit_html.contains("id=\"listing-slug-error\""));
+        assert!(edit_html.contains("hx-get=\"/admin/listings/slug-suggestion\""));
+        Ok(())
     }
 }

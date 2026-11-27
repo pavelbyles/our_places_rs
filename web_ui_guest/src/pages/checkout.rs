@@ -125,14 +125,6 @@ pub fn request_error_message(err: &anyhow::Error, max_guests: u32) -> String {
     }
 }
 
-/// Legacy `{slug}-jmd` style URLs carry an (active) currency in the slug.
-fn split_currency_suffix<'a>(slug: &'a str, codes: &[String]) -> Option<(&'a str, String)> {
-    codes.iter().find_map(|c| {
-        slug.strip_suffix(&format!("-{}", c.to_lowercase()))
-            .map(|base| (base, c.clone()))
-    })
-}
-
 /// Where the form posts. A valid stay stays in the URL, so a page re-rendered
 /// after a refusal still knows the stay when the guest switches currency. The
 /// handler books from the form's fields, never from this query.
@@ -596,10 +588,6 @@ async fn build_view(
 #[page("/checkout/{slug}")]
 pub async fn checkout_page(cx: &Cx) -> Result<impl View> {
     let slug: &str = slug(cx);
-    let offered = active_currency_codes(cx).await;
-    if let Some((base, currency)) = split_currency_suffix(slug, &offered) {
-        return Err(redirect_permanent(format!("/checkout/{base}?currency={currency}")).into());
-    }
     let guest = require_guest(cx).await.map_err(|e| guard_failure(cx, e))?;
     let currency = display_currency(cx).await.unwrap_or_default();
     let details = load(

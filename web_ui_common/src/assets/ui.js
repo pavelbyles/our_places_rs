@@ -178,6 +178,25 @@
       return;
     }
 
+    var applySlug = target.closest(
+      "[data-apply-slug-target][data-apply-slug-value]"
+    );
+    if (applySlug) {
+      event.preventDefault();
+      var slugInput = document.getElementById(
+        applySlug.getAttribute("data-apply-slug-target")
+      );
+      if (slugInput instanceof HTMLInputElement) {
+        slugInput.value = applySlug.getAttribute("data-apply-slug-value") || "";
+        slugInput.focus();
+      }
+      var suggestionHost = document.getElementById("listing-slug-suggestion");
+      if (suggestionHost) {
+        suggestionHost.replaceChildren();
+      }
+      return;
+    }
+
     var opener = target.closest("[data-dialog-open]");
     if (opener) {
       event.preventDefault();

@@ -1,10 +1,17 @@
 //! Creating, updating and deleting listings.
 
 use super::generate_listing_slug_native;
-use crate::error::{DbError, Result};
+use crate::error::{DbError, Result, SQLSTATE_UNIQUE_VIOLATION};
 use crate::models::{Listing, NewListing, UpdatedListing};
 use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
+
+fn is_listing_slug_unique_violation(e: &sqlx::Error) -> bool {
+    e.as_database_error().is_some_and(|db| {
+        db.code().as_deref() == Some(SQLSTATE_UNIQUE_VIOLATION)
+            && db.constraint() == Some("listing_slug_unique")
+    })
+}
 
 /// Creates a new listing in the database.
 // `skip_all`: the listing carries its coordinates, which must never reach a
@@ -79,6 +86,7 @@ where
         sqlx::Error::RowNotFound => crate::error::DbError::ValidationError(
             "User must have a host profile to create a listing".to_string(),
         ),
+        other if is_listing_slug_unique_violation(&other) => DbError::ListingSlugExists,
         other => crate::error::DbError::Sqlx(other),
     })?;
 
@@ -119,11 +127,20 @@ pub async fn update_listing_with_conn(
 ) -> Result<Listing> {
     let current = sqlx::query_as!(
         Listing,
-        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy", updated_at, listing_last_modified(id, updated_at) AS "last_modified_at!" FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy", updated_at, listing_last_modified(id, updated_at) AS "last_modified_at!" FROM listing WHERE id = $1 AND deleted_at IS NULL FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    let effective_slug = match updated_listing_data.slug.as_deref() {
+        Some(new_slug) if new_slug != current.slug => {
+            common::slug::validate_listing_slug(new_slug)
+                .map_err(|msg| DbError::ValidationError(msg.to_string()))?;
+            Some(new_slug)
+        }
+        _ => None,
+    };
 
     let effective_max_guests = updated_listing_data
         .max_guests
@@ -202,8 +219,9 @@ pub async fn update_listing_with_conn(
             guests_included = COALESCE($26, guests_included),
             extra_guest_fee = COALESCE($27, extra_guest_fee),
             booking_mode = COALESCE($28, booking_mode),
-            location_privacy = COALESCE($29, location_privacy)
-        WHERE id = $1
+            location_privacy = COALESCE($29, location_privacy),
+            slug = COALESCE($30, slug)
+        WHERE id = $1 AND deleted_at IS NULL
         RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy", updated_at, listing_last_modified(id, updated_at) AS "last_modified_at!"
         "#,
         id,
@@ -235,9 +253,26 @@ pub async fn update_listing_with_conn(
         updated_listing_data.extra_guest_fee,
         updated_listing_data.booking_mode as Option<common::booking_request::BookingMode>,
         updated_listing_data.location_privacy as Option<common::location::LocationPrivacy>,
+        effective_slug,
     )
     .fetch_one(&mut *tx)
-    .await?;
+    .await
+    .map_err(|e| {
+        if is_listing_slug_unique_violation(&e) {
+            DbError::ListingSlugExists
+        } else {
+            DbError::Sqlx(e)
+        }
+    })?;
+
+    if let Some(new_slug) = effective_slug {
+        tracing::info!(
+            listing_id = %id,
+            old_slug = %current.slug,
+            new_slug = %new_slug,
+            "listing slug updated"
+        );
+    }
 
     Ok(updated)
 }
